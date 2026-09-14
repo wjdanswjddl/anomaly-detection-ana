@@ -1,0 +1,12 @@
+timestamp=2026-09-04T13:26:41-05:00
+done=512
+total=514
+current=Converting 86414795_112 at Fri Sep  4 01:17:11 PM CDT 2026;Converting 86414790_107 at Fri Sep  4 01:21:40 PM CDT 2026;Converting 86414795_112 at Fri Sep  4 01:22:13 PM CDT 2026;
+mem_available_gb=101.6
+mem_used_pct=18.9
+user_mem_gb=15.67
+user_mem_pct=12.5
+job_mem_gb=0.01
+wvfm_procs=0
+zombie_procs=0
+batch_running=no

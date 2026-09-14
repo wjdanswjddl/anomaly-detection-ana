@@ -1,0 +1,53 @@
+[healthy] pending=21 already_done=0
+[unhealthy] pending=21 already_done=0
+Queue=42  budget=15.0 GiB  estimate/worker=1.35 GiB  max_workers≈11
+[spawn] pid=954230 healthy/86414745_63_g4-raw-0_10.h5_7.npz log=worker_healthy_86414745_63_g4-raw-0_10.h5_7_1788367954.log
+[spawn] pid=954231 unhealthy/86414729_47_g4-raw-0_0.h5_6.npz log=worker_unhealthy_86414729_47_g4-raw-0_0.h5_6_1788367954.log
+[spawn] pid=954232 healthy/86414745_63_g4-raw-0_10.h5_8.npz log=worker_healthy_86414745_63_g4-raw-0_10.h5_8_1788367954.log
+[spawn] pid=954233 unhealthy/86414729_47_g4-raw-0_3.h5_7.npz log=worker_unhealthy_86414729_47_g4-raw-0_3.h5_7_1788367954.log
+[spawn] pid=954234 healthy/86414745_63_g4-raw-0_10.h5_9.npz log=worker_healthy_86414745_63_g4-raw-0_10.h5_9_1788367954.log
+[spawn] pid=954235 unhealthy/86414729_47_g4-raw-0_5.h5_0.npz log=worker_unhealthy_86414729_47_g4-raw-0_5.h5_0_1788367954.log
+[spawn] pid=954236 healthy/86414745_63_g4-raw-0_11.h5_1.npz log=worker_healthy_86414745_63_g4-raw-0_11.h5_1_1788367954.log
+[spawn] pid=954237 unhealthy/86414729_47_g4-raw-0_5.h5_8.npz log=worker_unhealthy_86414729_47_g4-raw-0_5.h5_8_1788367954.log
+[spawn] pid=954238 healthy/86414745_63_g4-raw-0_11.h5_8.npz log=worker_healthy_86414745_63_g4-raw-0_11.h5_8_1788367954.log
+[spawn] pid=954239 unhealthy/86414735_53_g4-raw-0_0.h5_6.npz log=worker_unhealthy_86414735_53_g4-raw-0_0.h5_6_1788367954.log
+[spawn] pid=954240 healthy/86414745_63_g4-raw-0_12.h5_3.npz log=worker_healthy_86414745_63_g4-raw-0_12.h5_3_1788367954.log
+[status] workers=11 queue=31 rss=14.85/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[spawn] pid=954391 unhealthy/86414735_53_g4-raw-0_1.h5_4.npz log=worker_unhealthy_86414735_53_g4-raw-0_1.h5_4_1788367962.log
+[spawn] pid=954392 healthy/86414745_63_g4-raw-0_12.h5_5.npz log=worker_healthy_86414745_63_g4-raw-0_12.h5_5_1788367962.log
+[spawn] pid=954393 unhealthy/86414744_62_g4-raw-0_1.h5_1.npz log=worker_unhealthy_86414744_62_g4-raw-0_1.h5_1_1788367962.log
+[spawn] pid=954394 healthy/86414745_63_g4-raw-0_13.h5_2.npz log=worker_healthy_86414745_63_g4-raw-0_13.h5_2_1788367962.log
+[spawn] pid=954395 unhealthy/86414744_62_g4-raw-0_12.h5_1.npz log=worker_unhealthy_86414744_62_g4-raw-0_12.h5_1_1788367962.log
+[spawn] pid=954396 healthy/86414745_63_g4-raw-0_13.h5_3.npz log=worker_healthy_86414745_63_g4-raw-0_13.h5_3_1788367962.log
+[spawn] pid=954397 unhealthy/86414744_62_g4-raw-0_4.h5_7.npz log=worker_unhealthy_86414744_62_g4-raw-0_4.h5_7_1788367962.log
+[spawn] pid=954398 healthy/86414745_63_g4-raw-0_13.h5_9.npz log=worker_healthy_86414745_63_g4-raw-0_13.h5_9_1788367962.log
+[spawn] pid=954399 unhealthy/86414745_63_g4-raw-0_12.h5_7.npz log=worker_unhealthy_86414745_63_g4-raw-0_12.h5_7_1788367962.log
+[spawn] pid=954400 healthy/86414745_63_g4-raw-0_14.h5_0.npz log=worker_healthy_86414745_63_g4-raw-0_14.h5_0_1788367962.log
+[status] workers=21 queue=21 rss=13.77/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[spawn] pid=954582 unhealthy/86414749_67_g4-raw-0_14.h5_9.npz log=worker_unhealthy_86414749_67_g4-raw-0_14.h5_9_1788367970.log
+[spawn] pid=954583 healthy/86414745_63_g4-raw-0_14.h5_3.npz log=worker_healthy_86414745_63_g4-raw-0_14.h5_3_1788367970.log
+[spawn] pid=954584 unhealthy/86414749_67_g4-raw-0_4.h5_6.npz log=worker_unhealthy_86414749_67_g4-raw-0_4.h5_6_1788367970.log
+[spawn] pid=954585 healthy/86414745_63_g4-raw-0_14.h5_5.npz log=worker_healthy_86414745_63_g4-raw-0_14.h5_5_1788367970.log
+[spawn] pid=954586 unhealthy/86414751_69_g4-raw-0_4.h5_0.npz log=worker_unhealthy_86414751_69_g4-raw-0_4.h5_0_1788367970.log
+[spawn] pid=954587 healthy/86414745_63_g4-raw-0_14.h5_7.npz log=worker_healthy_86414745_63_g4-raw-0_14.h5_7_1788367970.log
+[spawn] pid=954588 unhealthy/86414751_69_g4-raw-0_4.h5_5.npz log=worker_unhealthy_86414751_69_g4-raw-0_4.h5_5_1788367970.log
+[spawn] pid=954589 healthy/86414745_63_g4-raw-0_3.h5_4.npz log=worker_healthy_86414745_63_g4-raw-0_3.h5_4_1788367970.log
+[spawn] pid=954590 unhealthy/86414762_80_g4-raw-0_6.h5_0.npz log=worker_unhealthy_86414762_80_g4-raw-0_6.h5_0_1788367970.log
+[spawn] pid=954591 healthy/86414745_63_g4-raw-0_4.h5_2.npz log=worker_healthy_86414745_63_g4-raw-0_4.h5_2_1788367970.log
+[status] workers=31 queue=11 rss=14.25/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[spawn] pid=954808 unhealthy/86414773_91_g4-raw-0_0.h5_0.npz log=worker_unhealthy_86414773_91_g4-raw-0_0.h5_0_1788367978.log
+[spawn] pid=954809 healthy/86414745_63_g4-raw-0_6.h5_1.npz log=worker_healthy_86414745_63_g4-raw-0_6.h5_1_1788367978.log
+[spawn] pid=954810 unhealthy/86414773_91_g4-raw-0_2.h5_4.npz log=worker_unhealthy_86414773_91_g4-raw-0_2.h5_4_1788367978.log
+[spawn] pid=954811 healthy/86414745_63_g4-raw-0_6.h5_6.npz log=worker_healthy_86414745_63_g4-raw-0_6.h5_6_1788367978.log
+[spawn] pid=954812 unhealthy/86414773_91_g4-raw-0_3.h5_5.npz log=worker_unhealthy_86414773_91_g4-raw-0_3.h5_5_1788367978.log
+[spawn] pid=954813 healthy/86414749_67_g4-raw-0_11.h5_1.npz log=worker_healthy_86414749_67_g4-raw-0_11.h5_1_1788367978.log
+[spawn] pid=954814 unhealthy/86414779_97_g4-raw-0_2.h5_8.npz log=worker_unhealthy_86414779_97_g4-raw-0_2.h5_8_1788367978.log
+[spawn] pid=954815 healthy/86414749_67_g4-raw-0_12.h5_6.npz log=worker_healthy_86414749_67_g4-raw-0_12.h5_6_1788367978.log
+[spawn] pid=954816 unhealthy/86414779_97_g4-raw-0_4.h5_5.npz log=worker_unhealthy_86414779_97_g4-raw-0_4.h5_5_1788367978.log
+[spawn] pid=954817 healthy/86414749_67_g4-raw-0_9.h5_8.npz log=worker_healthy_86414749_67_g4-raw-0_9.h5_8_1788367978.log
+[status] workers=41 queue=1 rss=14.92/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[spawn] pid=956748 unhealthy/86414783_100_g4-raw-0_0.h5_3.npz log=worker_unhealthy_86414783_100_g4-raw-0_0.h5_3_1788367986.log
+[status] workers=42 queue=0 rss=3.47/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[status] workers=42 queue=0 rss=6.00/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[status] workers=42 queue=0 rss=6.21/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0
+[status] workers=42 queue=0 rss=6.49/15.0 GiB  pkls healthy=0 unhealthy=0 failed=0

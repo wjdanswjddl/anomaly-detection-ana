@@ -1,0 +1,21 @@
+frame number,reason for flag,filename
+29,bad wire through track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+24,bad wire not through track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+41,undershoot along track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+161,undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+200,large undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+420,dead channel + time anomaly,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-1_4.h5
+36,large undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1736/g4-raw-1_3.h5
+155,wide undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1736/g4-raw-1_3.h5
+200,undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1736/g4-raw-1_3.h5
+38,dead channel zone,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+30,dead channel zone,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+104,undershoot + track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+105,undershoot no track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+211,undershoot + track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+212,undershoot + track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+257,anomaly,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+312,undershoot + track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+313,undershoot + track,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+327,overshoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5
+371,undershoot,/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms/27333755_1109/g4-raw-0_1.h5

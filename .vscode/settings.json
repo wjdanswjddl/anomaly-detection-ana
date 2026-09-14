@@ -1,0 +1,4 @@
+{
+  "python.defaultInterpreterPath": "/exp/sbnd/app/users/munjung/env/bin/python",
+  "jupyter.kernels.excludePythonEnvironments": []
+}

@@ -1,0 +1,12 @@
+Attempting to get token from https://htvaultprod.fnal.gov:8200 ... succeeded
+Storing bearer token in /tmp/bt_project_py_57582_341507
+Validation checks passed.
+Stage celltree:
+Checking directory /pnfs/sbnd/scratch/users/munjung/v10_06_00/wvfm2h5_grid_test/waveforms
+0 processes completed successfully.
+0 total good histogram files.
+Adding layer two for path /pnfs/sbnd/scratch/users/munjung/v10_06_00/wvfm2h5_grid_test/waveforms/files.list.
+Adding layer two for path /pnfs/sbnd/scratch/users/munjung/v10_06_00/wvfm2h5_grid_test/waveforms/events.list.
+Adding layer two for path /pnfs/sbnd/scratch/users/munjung/v10_06_00/wvfm2h5_grid_test/waveforms/filesana.list.
+0 processes with errors.
+2 missing files.

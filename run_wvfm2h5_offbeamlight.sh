@@ -1,0 +1,6 @@
+#!/bin/bash
+export BATCH_TAG="offbeamlight"
+export WAVEFORM_DIR="/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/waveforms"
+export H5_DIR="/pnfs/sbnd/scratch/users/munjung/v10_06_00/raw-SBND_DATA_InTimeCosmics_offbeamlight/h5"
+
+exec /exp/sbnd/app/users/munjung/anomaly-detection/run_wvfm2h5_batch.sh

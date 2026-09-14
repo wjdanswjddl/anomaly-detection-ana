@@ -1,0 +1,20 @@
+[2026-08-28 00:00:51] Monitor started (pid=2586755, interval=300s, user=munjung, user_mem_max=30%)
+/exp/sbnd/app/users/munjung/anomaly-detection/monitor_wvfm2h5_batch.sh: line 243: syntax error near unexpected token `else'
+/exp/sbnd/app/users/munjung/anomaly-detection/monitor_wvfm2h5_batch.sh: line 243: `      else'
+[2026-08-28 02:48:02] Monitor started (pid=2892382, interval=300s, user=munjung, user_mem_max=30%)
+[2026-08-28 02:48:03] PROGRESS done=8/514 converted=1 workers=2/5 active current='Converting 86414735_53 at Fri Aug 28 02:48:02 AM CDT 2026 [worker 2892381];SKIP (empty waveform.root): 86414738_56;SKIP (empty waveform.root): 86414741_59;' user_mem=14.80GiB(11.8%) job_mem=12.52GiB sys_used=20.1% mem_avail=100.0GiB zombies=0 batch_running=yes
+[2026-08-28 02:53:03] PROGRESS done=13/514 converted=4 workers=2/0 active current='DONE 86414744_62 at Fri Aug 28 02:51:28 AM CDT 2026;Converting 86414749_67 at Fri Aug 28 02:51:28 AM CDT 2026 [worker 2892381];SKIP (empty waveform.root): 86414750_68;' user_mem=1.68GiB(1.3%) job_mem=0.01GiB sys_used=9.6% mem_avail=113.1GiB zombies=0 batch_running=no
+[2026-08-28 02:53:04] STARTING batch from checkpoint
+[2026-08-28 02:53:04] Started batch pid=2903902
+[2026-08-28 02:58:05] PROGRESS done=31/514 converted=12 workers=3/3 active current='DONE 86414757_75 at Fri Aug 28 02:57:45 AM CDT 2026;Converting 86414780_98 at Fri Aug 28 02:57:45 AM CDT 2026 [worker 2903902];SKIP (empty waveform.root): 86414781_99;' user_mem=49.81GiB(39.8%) job_mem=48.73GiB sys_used=44.7% mem_avail=69.2GiB zombies=0 batch_running=yes
+[2026-08-28 02:58:05] STOPPING batch (user memory > 30% (user_mem=40.1%))
+[2026-08-28 02:58:05] Sending TERM to wvfm2h5.py pid=2909910
+[2026-08-28 02:58:05] Sending TERM to wvfm2h5.py pid=2910061
+[2026-08-28 02:58:05] Sending TERM to wvfm2h5.py pid=2911328
+[2026-08-28 02:58:05] Sending TERM to batch pid=2903902
+[2026-08-28 02:58:05] Sending TERM to batch pid=2909897
+[2026-08-28 02:58:05] Sending TERM to batch pid=2910050
+[2026-08-28 02:58:16] Sending KILL to wvfm2h5.py pid=2911763
+[2026-08-28 02:58:16] Sending KILL to batch pid=2911745
+[2026-08-28 02:58:18] Batch stopped. Checkpoint saved to /exp/sbnd/app/users/munjung/anomaly-detection/logs/wvfm2h5_checkpoint_offbeamlight.txt
+[2026-08-28 02:58:18] Cooling down for 120s before resume

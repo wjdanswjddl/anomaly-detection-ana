@@ -1,0 +1,12 @@
+timestamp=2026-09-03T13:07:40-05:00
+done=238
+total=238
+current=Converting 71789176_29 at Thu Sep  3 12:57:37 PM CDT 2026;Converting 71789222_75 at Thu Sep  3 12:59:03 PM CDT 2026;Converting 71789176_29 at Thu Sep  3 01:02:39 PM CDT 2026;
+mem_available_gb=74.7
+mem_used_pct=40.3
+user_mem_gb=20.84
+user_mem_pct=16.6
+job_mem_gb=12.81
+wvfm_procs=1
+zombie_procs=0
+batch_running=yes

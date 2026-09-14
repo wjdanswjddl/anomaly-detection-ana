@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+
+<!-- Small test: celltree + waveform dump + in-job wvfm2h5 conversion (2 jobs) -->
+
+<!DOCTYPE project [
+    <!ENTITY relsim "v10_06_00">
+    <!ENTITY larqual "e26:prof">
+    <!ENTITY name "wvfm2h5_grid_test">
+    <!ENTITY tag "anomaly_detection">
+    ]>
+
+<job>
+
+<project name="&name;">
+
+<group>sbnd</group>
+<numevents>1000</numevents>
+<os>SL7</os>
+<resource>DEDICATED,OPPORTUNISTIC,OFFSITE</resource>
+
+<larsoft>
+<tag>&relsim;</tag>
+<qual>&larqual;</qual>
+</larsoft>
+
+<stage name="celltree">
+<inputlist>/exp/sbnd/app/users/munjung/anomaly-detection/grid_wvfm2h5/test_inputs_2files.list</inputlist>
+<initsource>/exp/sbnd/app/users/munjung/v10_06_00_02-dnnsp/jobs/tarball_ingredients/wirecell_init.sh</initsource>
+<fcl>/exp/sbnd/app/users/munjung/v10_06_00_02-dnnsp/jobs/celltree_data.fcl</fcl>
+<endscript>/exp/sbnd/app/users/munjung/anomaly-detection/grid_wvfm2h5/wirecell_macro.sh</endscript>
+<outdir>/pnfs/sbnd/scratch/users/munjung/&relsim;/&name;/waveforms</outdir>
+<workdir>/pnfs/sbnd/resilient/users/munjung/&relsim;/&name;/waveforms</workdir>
+<jobsub> --memory=10000MB --expected-lifetime=4h --use-cvmfs-dropbox --tar_file_name=dropbox:///pnfs/sbnd/resilient/users/munjung/dump_waveform.tar --generate-email-summary --lines '+FERMIHTC_AutoRelease=True' --lines '+FERMIHTC_GraceMemory=10000' --lines '+FERMIHTC_GraceLifetime=5400' -l '+SingularityImage="/cvmfs/singularity.opensciencegrid.org/fermilab/fnal-wn-sl7:latest"' --append_condor_requirements='(TARGET.HAS_SINGULARITY=?=true)' </jobsub>
+<!-- Stage out both ROOT and HDF5 products -->
+<datafiletypes>root,h5</datafiletypes>
+<disk>30GB</disk>
+<numjobs>2</numjobs>
+</stage>
+
+</project>
+</job>

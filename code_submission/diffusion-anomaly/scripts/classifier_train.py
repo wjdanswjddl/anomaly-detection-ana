@@ -1,0 +1,325 @@
+"""
+Train a noised image classifier on ImageNet.
+"""
+
+import argparse
+import os
+import random
+import sys
+from torch.autograd import Variable
+sys.path.append("..")
+sys.path.append(".")
+import blobfile as bf
+import torch as th
+os.environ['OMP_NUM_THREADS'] = '8'
+
+import torch.distributed as dist
+import torch.nn.functional as F
+from torch.nn.parallel.distributed import DistributedDataParallel as DDP
+from torch.optim import Adam, AdamW
+import numpy as np
+
+from guided_diffusion import dist_util, logger
+from guided_diffusion.fp16_util import MixedPrecisionTrainer
+from guided_diffusion.image_datasets import load_data, ShuffleDataset
+from guided_diffusion.train_util import visualize
+from guided_diffusion.resample import create_named_schedule_sampler
+from guided_diffusion.script_util import (
+    add_dict_to_argparser,
+    args_to_dict,
+    classifier_and_diffusion_defaults,
+    create_classifier_and_diffusion,
+)
+from guided_diffusion.train_util import parse_resume_step_from_filename, log_loss_dict
+
+from matplotlib import pyplot as plt
+
+
+
+def main():
+    args = create_argparser().parse_args()
+
+    dist_util.setup_dist()
+    logger.configure(log_suffix="classifier_wdataloader")
+
+    logger.log("creating model and diffusion...")
+    model, diffusion = create_classifier_and_diffusion(
+        **args_to_dict(args, classifier_and_diffusion_defaults().keys()),
+    )
+    print("======DEUG: args.noised", args.noised)
+    model.to(dist_util.dev())
+    if args.noised:
+        schedule_sampler = create_named_schedule_sampler(
+            args.schedule_sampler, diffusion, maxt=1000
+        )
+
+    resume_step = 0
+    if args.resume_checkpoint:
+        resume_step = parse_resume_step_from_filename(args.resume_checkpoint)
+        if dist.get_rank() == 0:
+            logger.log(
+                f"loading model from checkpoint: {args.resume_checkpoint}... at {resume_step} step"
+            )
+            model.load_state_dict(
+                dist_util.load_state_dict(
+                    args.resume_checkpoint, map_location=dist_util.dev()
+                )
+            )
+
+    # Needed for creating correct EMAs and fp16 parameters.
+    dist_util.sync_params(model.parameters())
+
+    mp_trainer = MixedPrecisionTrainer(
+        model=model, use_fp16=args.classifier_use_fp16, initial_lg_loss_scale=16.0
+    )
+
+
+    logger.log("creating data loader...")
+
+    datal = load_data(
+            data_dir=args.data_dir,
+            batch_size=args.batch_size,
+            image_size=args.image_size,
+            charge_scale=args.charge_scale,
+            class_cond=True, 
+    )
+    #datal = ShuffleDataset(datal, buffer_size=1000)
+
+    logger.log(f"creating optimizer...")
+    #opt = AdamW(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
+    opt = Adam(mp_trainer.master_params, lr=args.lr, weight_decay=args.weight_decay)
+    if args.resume_checkpoint:
+        opt_checkpoint = bf.join(
+            bf.dirname(args.resume_checkpoint), f"opt{resume_step:06}.pt"
+        )
+        logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
+        opt.load_state_dict(
+            dist_util.load_state_dict(opt_checkpoint, map_location=dist_util.dev())
+        )
+
+    logger.log("training classifier model...")
+
+
+    def forward_backward_log(data_loader, step, prefix="train"):
+        # loading data
+        batch = []
+        labels = []
+        batch_val = []
+        labels_val = []
+
+        base_path = "/scratch/7DayLifetime/munjung/anomaly-detection/npz"
+        classdirs = os.listdir(base_path)
+        classdirs = ["/scratch/7DayLifetime/gputnam/raw-sq-wtruth",  "/scratch/7DayLifetime/munjung/anomaly-detection/npz/erase"]
+        class_idxs = []
+        for cidx, c in enumerate(classdirs):
+
+            # randomly choose 
+            classfiles = os.listdir(c)[:20]
+            classfiles = [os.path.join(c, f) for f in classfiles]
+            classfiles = np.random.choice(classfiles, size=2, replace=False)
+
+            # DEBUG: try on the same files
+            #if cidx == 0:
+            #    classfiles = ["/scratch/7DayLifetime/gputnam/raw-sq-wtruth/tpc0_plane1_rec_82090893_270.npz"]
+
+            #elif cidx == 1:
+            #    classfiles = ["/scratch/7DayLifetime/munjung/anomaly-detection/npz/erase/tpc0_plane0_rec_67583145_18_diseased_erase.npz"]
+            print('classfiles', classfiles)
+
+            for file in classfiles:
+                numpy_img = np.load(file)
+                _cache_file = visualize(numpy_img["reco"]).astype(np.float32)
+                _cache_true = numpy_img["truth"].astype(np.float32)
+        
+                _weights = np.sum(_cache_true, axis=(1, 2, 3)).astype(np.float32)
+                _weights = _weights / np.mean(_weights)
+        
+                charge_norm = np.mean(_cache_true)
+                _pixel_weights = 1 + _cache_true / charge_norm # / charge_scale
+                _pixel_weights = _pixel_weights / np.mean(_pixel_weights)
+                _charge = np.sum(_cache_true, axis=(1, 2, 3)).astype(np.float32)
+        
+                #for iidx in range(3):
+                iidxs = np.random.choice(_cache_file.shape[0], size=50, replace=False)
+                #iidxs = np.arange(_cache_file.shape[0])[:30]
+                n_train = 0
+                for iidx in iidxs[:30]:
+                    arr = _cache_file[iidx]
+                    w = _weights[iidx]
+                    pw = _pixel_weights[iidx]
+                    c = _charge[iidx]
+
+                    if np.max(arr) < 0.5:
+                        continue
+
+                    batch.append([arr])
+                    labels.append(cidx)
+                    n_train += 1
+                    if n_train >= 10:
+                        break
+
+
+        # shuffle
+        shuffler = np.random.permutation(len(labels))
+        labels = np.array(labels)[shuffler] 
+        batch = np.concatenate(batch)[shuffler]
+        print("batchh shape", batch.shape)
+        # transpose first and second dimension to match the input shape of the model
+        print("batch shape before transpose", batch.shape)
+        #batch = np.transpose(batch, (1, 0, 2, 3))
+        print("labels", labels)
+        batch = th.from_numpy(batch).to(dist_util.dev())
+        labels = th.from_numpy(labels).to(dist_util.dev()).long()
+
+        #batch, extra = next(data_loader)
+        #labels = extra["y"].to(dist_util.dev())
+        #batch = batch.to(dist_util.dev())
+        #labels= labels.to(dist_util.dev())
+        print('labels', labels)
+        if args.noised:
+            t, _ = schedule_sampler.sample(batch.shape[0], dist_util.dev())
+            batch = diffusion.q_sample(batch, t)
+        else:
+            t = th.zeros(batch.shape[0], dtype=th.long, device=dist_util.dev())
+
+        for i, (sub_batch, sub_labels, sub_t) in enumerate(
+            split_microbatches(args.microbatch, batch, labels, t)
+        ):
+          
+            sub_batch = Variable(sub_batch, requires_grad=True)
+            logits = model(sub_batch, timesteps=sub_t)
+            print("=====DEBUG: logits: ", logits)
+         
+            loss = F.cross_entropy(logits, sub_labels, reduction="none")
+            losses = {}
+            losses[f"{prefix}_loss"] = loss.detach()
+            losses[f"{prefix}_acc@1"] = compute_top_k(
+                logits, sub_labels, k=1, reduction="none"
+            )
+            losses[f"{prefix}_acc@2"] = compute_top_k(
+                logits, sub_labels, k=2, reduction="none"
+            )
+            print('loss', losses[f"{prefix}_loss"])
+            print('acc', losses[f"{prefix}_acc@1"])
+            log_loss_dict(diffusion, sub_t, losses)
+
+            loss = loss.mean()
+            if prefix != "train":
+                output_idx = logits[0].argmax()
+                print('outputidx', output_idx)
+                output_max = logits[0, output_idx]
+                print('outmax', output_max, output_max.shape)
+                output_max.backward()
+                saliency, _ = th.max(sub_batch.grad.data.abs(), dim=1)
+                print('saliency', saliency.shape)
+                th.cuda.empty_cache()
+
+
+            if loss.requires_grad and prefix=="train":
+                if i == 0:
+                    mp_trainer.zero_grad()
+                mp_trainer.backward(loss * len(sub_batch) / len(batch))
+
+        return losses
+
+    correct=0; total=0
+    for step in range(args.iterations - resume_step):
+        logger.logkv("step", step + resume_step)
+        logger.logkv(
+            "samples",
+            (step + resume_step + 1) * args.batch_size * dist.get_world_size(),
+        )
+        if args.anneal_lr:
+            set_annealed_lr(opt, args.lr, (step + resume_step) / args.iterations)
+        print('step', step + resume_step)
+
+        losses = forward_backward_log(datal, step + resume_step)
+
+        correct+=losses["train_acc@1"].sum()
+        total+=args.batch_size
+        acctrain=correct/total
+
+        # see if the weights are being updated
+        old_weights = model.parameters().__next__().clone()
+
+        mp_trainer.optimize(opt)
+
+        # After the optimization step
+        new_weights = model.parameters().__next__()
+        diff = th.abs(new_weights - old_weights).sum().item()
+        
+        print(f"=====DEBUG: Total weight change: {diff}")
+          
+        if not step % args.log_interval:
+            logger.dumpkvs()
+        if (
+            step
+            and dist.get_rank() == 0
+            and not (step + resume_step) % args.save_interval
+        ):
+            logger.log("saving model...")
+            save_model(mp_trainer, opt, step + resume_step)
+
+    if dist.get_rank() == 0:
+        logger.log("saving model...")
+        save_model(mp_trainer, opt, step + resume_step)
+    dist.barrier()
+
+
+def set_annealed_lr(opt, base_lr, frac_done):
+    lr = base_lr * (1 - frac_done)
+    for param_group in opt.param_groups:
+        param_group["lr"] = lr
+
+
+def save_model(mp_trainer, opt, step):
+    if dist.get_rank() == 0:
+        th.save(
+            mp_trainer.master_params_to_state_dict(mp_trainer.master_params),
+            os.path.join(logger.get_dir(), f"classifier_model_{step:06d}.pt"),
+        )
+        th.save(opt.state_dict(), os.path.join(logger.get_dir(), f"classifier_opt_{step:06d}.pt"))
+
+def compute_top_k(logits, labels, k, reduction="mean"):
+    _, top_ks = th.topk(logits, k, dim=-1)
+    if reduction == "mean":
+        return (top_ks == labels[:, None]).float().sum(dim=-1).mean().item()
+    elif reduction == "none":
+        return (top_ks == labels[:, None]).float().sum(dim=-1)
+
+
+def split_microbatches(microbatch, *args):
+    bs = len(args[0])
+    if microbatch == -1 or microbatch >= bs:
+        yield tuple(args)
+    else:
+        for i in range(0, bs, microbatch):
+            yield tuple(x[i : i + microbatch] if x is not None else None for x in args)
+
+
+def create_argparser():
+    defaults = dict(
+        data_dir="",
+        val_data_dir="",
+        noised=False,
+        iterations=150000,
+        lr=3e-4,
+        weight_decay=0.0,
+        anneal_lr=False,
+        batch_size=4,
+        microbatch=-1,
+        schedule_sampler="uniform",
+        resume_checkpoint="",
+        log_interval=1,
+        eval_interval=1000,
+        save_interval=500,
+        charge_scale=False
+    )
+    defaults.update(classifier_and_diffusion_defaults())
+    parser = argparse.ArgumentParser()
+    add_dict_to_argparser(parser, defaults)
+    return parser
+
+
+if __name__ == "__main__":
+    main()

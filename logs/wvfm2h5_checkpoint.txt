@@ -1,0 +1,12 @@
+timestamp=2026-08-28T02:59:13-05:00
+done=1130
+total=1862
+current=Converting 86413898_1452 at Fri Aug 28 12:03:15 AM CDT 2026 [worker 2460202];DONE 86413898_1451 at Fri Aug 28 12:03:35 AM CDT 2026;Converting 86413898_1453 at Fri Aug 28 12:03:35 AM CDT 2026 [worker 2460202];
+mem_available_gb=116.3
+mem_used_pct=7.1
+user_mem_gb=1.15
+user_mem_pct=0.9
+job_mem_gb=0.01
+wvfm_procs=0
+zombie_procs=0
+batch_running=no
