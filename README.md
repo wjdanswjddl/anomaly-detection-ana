@@ -101,6 +101,9 @@ Ensure jobsub auth works on the submit host (same as cafpyana), e.g. valid
 SciToken / `htgettoken` for experiment `sbnd`. Submit uses `--use-pnfs-dropbox`
 (avoids RCDS quota issues when publishing the dropbox tarball).
 
+**Note:** `jobsub_submit` writes under `~/.cache/jobsub_lite`. If nashome is at
+quota (`Disk quota exceeded`), free space there before submitting.
+
 ### Dry-run (writes scripts + tarball, does not submit)
 
 ```bash
