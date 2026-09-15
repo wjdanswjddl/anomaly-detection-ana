@@ -1,0 +1,6 @@
+# Minimal CPU deps for SBND grid inference workers (jobsub).
+# Do NOT use train/diffusion-anomaly/requirements.txt (pins old CUDA torch).
+numpy>=1.24
+tqdm>=4.66
+blobfile>=2.0
+torch  # install CPU wheel on workers; see bin/init_grid.sh

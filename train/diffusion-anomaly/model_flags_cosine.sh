@@ -1,0 +1,1 @@
+../../configs/train_flags/cosine.sh

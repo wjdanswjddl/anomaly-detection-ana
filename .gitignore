@@ -1,3 +1,20 @@
 __pycache__/
 *.py[cod]
+*$py.class
 .DS_Store
+.ipynb_checkpoints/
+train/eaf_discover.json
+
+# Checkpoints / heavy products (live on /exp or pnfs, not GitHub)
+*.pt
+*.pkl
+*.npz
+train/diffusion-anomaly/results/
+**/results/*.pt
+**/results/opt*.pt
+**/results/ema*.pt
+**/results/tb/
+
+# Local / scratch outputs
+training/benchmarks/
+*.log

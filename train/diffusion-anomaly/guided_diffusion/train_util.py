@@ -12,11 +12,19 @@ from . import dist_util, logger, validation_plots
 from .fp16_util import MixedPrecisionTrainer
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
-from visdom import Visdom
 from tqdm.auto import tqdm
-# viz = Visdom(port=8850)
-viz = Visdom(port=8850, server="sbndbuild03.fnal.gov")
 import numpy as np
+
+# Visdom is unused in the train loop; avoid connecting to a remote server
+# (hangs on EAF when sbndbuild03:8850 is unreachable).
+class _NoOpVisdom:
+    def __getattr__(self, name):
+        def _noop(*args, **kwargs):
+            return None
+        return _noop
+
+
+viz = _NoOpVisdom()
 
 INITIAL_LOG_LOSS_SCALE = 20.0
 
@@ -51,6 +59,7 @@ class TrainLoop:
         schedule_sampler=None,
         weight_decay=0.0,
         lr_anneal_steps=0,
+        max_steps=0,
     ):
         self.model = model
         self.diffusion = diffusion
@@ -74,6 +83,8 @@ class TrainLoop:
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
         self.weight_decay = weight_decay
         self.lr_anneal_steps = lr_anneal_steps
+        # Hard stop without LR annealing (iterE-style constant LR until ~111k).
+        self.max_steps = max_steps
         self.weight_batches = weight_batches
         self.weight_pixels = weight_pixels
 
@@ -106,12 +117,12 @@ class TrainLoop:
                 for _ in range(len(self.ema_rate))
             ]
 
-        if th.cuda.is_available():
+        if th.cuda.is_available() and dist.get_world_size() > 1:
             self.use_ddp = True
             self.ddp_model = DDP(
                 self.model,
-                device_ids=[dist_util.dev()],
-                output_device=dist_util.dev(),
+                device_ids=[0],
+                output_device=0,
                 broadcast_buffers=False,
                 bucket_cap_mb=128,
                 find_unused_parameters=False,
@@ -169,14 +180,20 @@ class TrainLoop:
             )
             self.opt.load_state_dict(state_dict)
 
+    def _keep_training(self):
+        """Continue while under optional max_steps / lr_anneal_steps budgets."""
+        cur = self.step + self.resume_step
+        if self.max_steps and cur >= self.max_steps:
+            return False
+        if self.lr_anneal_steps and cur >= self.lr_anneal_steps:
+            return False
+        return True
+
     def run_loop(self):
         i = 0
 
         pbar = tqdm()
-        while (
-            not self.lr_anneal_steps
-            or self.step + self.resume_step < self.lr_anneal_steps
-        ):
+        while self._keep_training():
             batch, cond = next(self.datal)
             cond.pop("path", None)
             bw = cond.pop("weight", None)
@@ -186,7 +203,9 @@ class TrainLoop:
 
             self.run_step(batch, cond, batch_weights=batch_weights, pixel_weights=pixel_weights)
 
-            if self.step % self.validation_interval == 0:
+            # Skip step 0: same interval would stack train+val activations and
+            # often triggers MIG NVML / OOM on the first iteration.
+            if self.step > 0 and self.step % self.validation_interval == 0:
                 vbatch, vcond = next(self.validationl)
                 vcond.pop("path", None)
                 bw = vcond.pop("weight", None)
@@ -194,6 +213,8 @@ class TrainLoop:
                 vbatch_weights = None if not self.weight_batches else bw
                 vpixel_weights = None if not self.weight_pixels else pw
                 self.run_validation_step(vbatch, vcond, batch_weights=vbatch_weights, pixel_weights=vpixel_weights)
+                if th.cuda.is_available():
+                    th.cuda.empty_cache()
 
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
@@ -338,7 +359,7 @@ class TrainLoop:
             ) as f:
                 th.save(self.opt.state_dict(), f)
 
-        dist.barrier(device_ids=[0])
+        dist.barrier()
 
 
 def parse_resume_step_from_filename(filename):

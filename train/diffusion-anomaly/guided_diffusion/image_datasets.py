@@ -8,10 +8,17 @@ import torch as th
 from torch.utils.data import DataLoader, IterableDataset, Dataset, BatchSampler, RandomSampler, SequentialSampler
 from torchvision import transforms
 from .train_util import visualize
-from visdom import Visdom
-# viz = Visdom(port=8850)
-viz = Visdom(port=8850, server="sbndbuild03.fnal.gov")
 from scipy import ndimage
+
+# Avoid Visdom server connect at import (unused here; hangs on EAF).
+class _NoOpVisdom:
+    def __getattr__(self, name):
+        def _noop(*args, **kwargs):
+            return None
+        return _noop
+
+
+viz = _NoOpVisdom()
 
 
 def load_data(
@@ -27,6 +34,8 @@ def load_data(
     importance_sampling=False,
     importance_maxwgt=10,
     charge_scale=1,
+    num_workers=0,
+    shuffle_buffer=1000,
 ):
     """
     For a dataset, create a generator over (images, kwargs) pairs.
@@ -45,6 +54,8 @@ def load_data(
     :param deterministic: if True, yield results in a deterministic order.
     :param random_crop: if True, randomly crop the images for augmentation.
     :param random_flip: if True, randomly flip the images for augmentation.
+    :param num_workers: DataLoader workers. Keep 0/1 for this IterableDataset —
+        >1 replicates full streams and duplicates samples.
     """
     if not data_dir:
         raise ValueError("unspecified data directory")
@@ -75,16 +86,28 @@ def load_data(
         importance_maxwgt=importance_maxwgt,
         charge_scale=charge_scale,
         require_charge=require_charge,
+        shuffle_files=not deterministic,
     )
 
-    if deterministic:
-        loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+    if not deterministic:
+        dataset = ShuffleDataset(dataset, buffer_size=shuffle_buffer)
+
+    # IterableDataset: do not use DataLoader shuffle; multi-worker would
+    # duplicate the full stream. Prefer num_workers=0.
+    if num_workers > 1:
+        print(
+            f"WARNING: ImageDataset is IterableDataset; "
+            f"num_workers={num_workers} can duplicate samples. Using 0."
         )
-    else:
-        loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
-        )
+        num_workers = 0
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        drop_last=True,
+        pin_memory=th.cuda.is_available(),
+    )
 
     while True:
         yield from loader
@@ -116,11 +139,15 @@ class ImageDataset(IterableDataset):
         require_charge=False,
         random_crop=False,
         random_flip=False,
-        exts=['jpg', 'jpeg', 'png', 'npy', 'npz']
+        exts=['jpg', 'jpeg', 'png', 'npy', 'npz'],
+        shuffle_files=False,
     ):
         super().__init__()
         self.resolution = resolution
         self.local_images = [p for ext in exts for p in Path(f'{image_paths}').glob(f'**/*.{ext}')]
+        self.shuffle_files = shuffle_files
+        if self.shuffle_files:
+            random.shuffle(self.local_images)
 
         self.local_classes = None if classes is None else classes[shard:][::num_shards]
         self.random_crop = random_crop
@@ -183,7 +210,11 @@ class ImageDataset(IterableDataset):
                     arr, w, pw, c = self._getnext()
                 except StopIteration:
                     print("EPOCH COMPLETED. RESTARTING.")
-                    self._cache_find = 0
+                    self._cache_find = -1
+                    self._cache_aind = -1
+                    self._cache_file = None
+                    if self.shuffle_files:
+                        random.shuffle(self.local_images)
                     continue
                 except Exception as e:
                     print("Opening file (%s) failed with error: %s. Skipping..." % (self.local_images[self._cache_find], str(e)))

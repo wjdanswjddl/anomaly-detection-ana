@@ -40,9 +40,15 @@ def load_csv_file(filename: str, header_elements=None):
 
 
 from decimal import Decimal
-from visdom import Visdom
-# viz = Visdom(port=8850)
-viz = Visdom(port=8850, server="sbndbuild03.fnal.gov")
+# Avoid remote Visdom connect (unused in typical EAF training).
+class _NoOpVisdom:
+    def __getattr__(self, name):
+        def _noop(*args, **kwargs):
+            return None
+        return _noop
+
+
+viz = _NoOpVisdom()
 
 filename='../BRATS2020_npz/database.csv'
 with open(filename, newline='', encoding='utf-8-sig') as csvfile:
