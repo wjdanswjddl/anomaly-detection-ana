@@ -1,7 +1,0 @@
-/env/
-.ipynb_checkpoints/
-__pycache__/
-*.png
-*.pdf
-*.npy
-*.log

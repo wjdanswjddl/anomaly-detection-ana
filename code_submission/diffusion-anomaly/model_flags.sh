@@ -1,7 +1,0 @@
-#export MODEL_FLAGS="--image_size 512 --num_channels 32 --class_cond False --num_res_blocks 2 --num_heads 8 --learn_sigma True --use_scale_shift_norm False --attention_resolutions 16,32 --channel_mult 1,2,4,8,8,8"
-export MODEL_FLAGS="--image_size 512 --num_channels 32 --class_cond False --num_res_blocks 2 --num_heads 8 --learn_sigma True --use_scale_shift_norm False --attention_resolutions 16,32"
-export DIFFUSION_FLAGS="--diffusion_steps 1000 --noise_schedule linear --rescale_learned_sigmas False --rescale_timesteps False --save_interval 1000 --plot_interval 500 --predict_xstart False"
-export TRAIN_FLAGS="--lr 1e-4 --batch_size 5 --microbatch 5 --weight_batches False --weight_pixels False --weight_decay 0.01"
-#export DATADIR="--data_dir /scratch/7DayLifetime/munjung/anomaly-detection/npz/ --validation_dir /scratch/7DayLifetime/munjung/anomaly-detection/npz/ --charge_scale 10."
-export DATADIR="--data_dir /scratch/7DayLifetime/gputnam/raw-sq-wtruth/ --validation_dir /scratch/7DayLifetime/gputnam/raw-sq-wtruth/ --charge_scale 1"
-export IMAGE_TRAIN_FLAGS="$DATADIR $MODEL_FLAGS $DIFFUSION_FLAGS $TRAIN_FLAGS"

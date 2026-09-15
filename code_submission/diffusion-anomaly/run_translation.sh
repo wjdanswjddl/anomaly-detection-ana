@@ -1,1 +1,0 @@
-python scripts/classifier_sample_known.py $TRANSLATION_FLAGS
