@@ -70,7 +70,7 @@ def _write_worker_script(
     formats: str,
     extra_args: str,
 ) -> None:
-    """Bash sourced on the worker after the repo + venv are ready."""
+    """Bash executed (not sourced) on the worker after the repo + venv are ready."""
     lines = [
         "#!/bin/bash",
         "set -euo pipefail",
@@ -78,17 +78,27 @@ def _write_worker_script(
         "mkdir -p inputs",
         f"mkdir -p out_{job_idx}",
         "",
-        "# Stage model (once per job)",
-        f"echo '[run_{job_idx}.sh] ifdh cp model'",
-        f"ifdh cp {shlex.quote(model_pnfs)} ./model.pt",
+        "# Model: prefer dropbox copy staged by grid_executable; else ifdh from pnfs",
+        "if [ -f ./model.pt ]; then",
+        f"  echo '[run_{job_idx}.sh] using dropbox model.pt'",
+        "else",
+        f"  echo '[run_{job_idx}.sh] ifdh cp model'",
+        f"  ifdh cp {shlex.quote(model_pnfs)} ./model.pt",
+        "fi",
         "ls -lh ./model.pt",
         "",
-        "# Stage NPZ inputs (not ROOT — plain ifdh of .npz is fine)",
+        "# NPZ inputs: dropbox (${DROPBOX_DIR}/inputs/) if present, else ifdh",
     ]
     for i, f in enumerate(files):
         base = Path(f).name
-        lines.append(f"echo '[run_{job_idx}.sh] input {i}: {f}'")
-        lines.append(f"ifdh cp {shlex.quote(f)} ./inputs/{shlex.quote(base)}")
+        lines += [
+            f"echo '[run_{job_idx}.sh] input {i}: {f}'",
+            f"if [ -n \"${{DROPBOX_DIR:-}}\" ] && [ -f \"${{DROPBOX_DIR}}/inputs/{base}\" ]; then",
+            f"  cp -f \"${{DROPBOX_DIR}}/inputs/{base}\" ./inputs/{base}",
+            "else",
+            f"  ifdh cp {shlex.quote(f)} ./inputs/{shlex.quote(base)}",
+            "fi",
+        ]
     lines += [
         "ls -lh inputs/",
         "",
@@ -200,7 +210,36 @@ def main() -> None:
     shutil.copy2(exe, master / "grid_executable.sh")
     (master / "grid_executable.sh").chmod(0o755)
 
-    # Ship a slim repo snapshot so workers do not need to git-clone a private repo.
+    # Stage model into dropbox (avoids a large ifdh pull on every worker).
+    model_drop = master / "model.pt"
+    print(f"Copying model → {model_drop}")
+    shutil.copy2(model, model_drop)
+
+    # Stage NPZ inputs into dropbox when small enough (smoke / modest lists).
+    # Larger campaigns still fall back to ifdh inside run_*.sh.
+    inputs_dir = master / "inputs"
+    inputs_dir.mkdir(exist_ok=True)
+    stage_bytes = 0
+    staged_inputs = 0
+    max_stage = int(os.environ.get("ANOMALY_MAX_STAGE_BYTES", str(400 * 1024 * 1024)))
+    for src in inputs:
+        p = Path(src)
+        try:
+            sz = p.stat().st_size
+        except OSError:
+            print(f"WARNING: cannot stat {src}; worker will ifdh it", file=sys.stderr)
+            continue
+        if stage_bytes + sz > max_stage:
+            print(f"Skipping further input staging (>{max_stage/1e6:.0f} MB); remaining via ifdh")
+            break
+        dest = inputs_dir / p.name
+        if not dest.exists():
+            shutil.copy2(p, dest)
+        stage_bytes += sz
+        staged_inputs += 1
+    print(f"Staged {staged_inputs}/{len(inputs)} inputs ({stage_bytes/1e6:.1f} MB) into dropbox")
+
+    # Optional slim repo snapshot (fallback if git clone is disabled/unavailable).
     repo_bundle = master / "repo_bundle.tar"
     if repo_bundle.exists():
         repo_bundle.unlink()
@@ -215,7 +254,6 @@ def main() -> None:
         "train/diffusion-anomaly/README.md",
         "train/diffusion-anomaly/LICENSE",
     ]
-    # Optional flag scripts if present.
     for extra in sorted((wd / "train" / "diffusion-anomaly").glob("*.sh")):
         bundle_members.append(f"train/diffusion-anomaly/{extra.name}")
     missing = [m for m in bundle_members if not (wd / m).exists()]
@@ -243,6 +281,8 @@ def main() -> None:
                 f"ngrid={ngrid}",
                 f"file_list={args.file_list}",
                 f"repo_bundle={repo_bundle}",
+                f"staged_inputs={staged_inputs}",
+                f"model_in_dropbox={model_drop}",
                 "",
             ]
         )
@@ -254,17 +294,24 @@ def main() -> None:
         tar_path = master / "bin_dir.tar"
         if tar_path.exists():
             tar_path.unlink()
-        members = ["grid_executable.sh", "campaign.txt", "repo_bundle.tar"] + [
-            f"run_{i}.sh" for i in range(ngrid)
-        ]
+        members = [
+            "grid_executable.sh",
+            "campaign.txt",
+            "repo_bundle.tar",
+            "model.pt",
+        ] + [f"run_{i}.sh" for i in range(ngrid)]
+        if staged_inputs:
+            members.append("inputs")
         subprocess.check_call(["tar", "cf", "bin_dir.tar", *members])
+        print(f"  bin_dir.tar size={(master / 'bin_dir.tar').stat().st_size / 1e6:.1f} MB")
     finally:
         os.chdir(cwd)
 
     job_disk = os.environ.get("JOBSUB_DISK", "20GB")
-    job_mem = os.environ.get("JOBSUB_MEMORY", "12GB")
+    job_mem = os.environ.get("JOBSUB_MEMORY", "6GB")
     job_life = os.environ.get("JOBSUB_LIFETIME", "12h")
     job_cpu = os.environ.get("JOBSUB_CPU", "4")
+    use_git = os.environ.get("ANOMALY_USE_GIT_CLONE", "1")
 
     # Pass git URL/ref into the worker environment.
     submit_cmd = f"""jobsub_submit \\
@@ -273,6 +320,7 @@ def main() -> None:
 -e LC_ALL=C \\
 -e ANOMALY_GIT_URL={shlex.quote(git_url)} \\
 -e ANOMALY_GIT_REF={shlex.quote(git_ref)} \\
+-e ANOMALY_USE_GIT_CLONE={shlex.quote(use_git)} \\
 --role=Analysis \\
 --resource-provides="usage_model=DEDICATED,OPPORTUNISTIC" \\
 --lines '+FERMIHTC_AutoRelease=True' --lines '+FERMIHTC_GraceMemory=5000' --lines '+FERMIHTC_GraceLifetime=3600' \\
@@ -298,7 +346,6 @@ def main() -> None:
     subprocess.check_call(submit_cmd, shell=True)
     print(f"Submitted. Monitor: jobsub_q -G sbnd --user {os.environ.get('USER', '$USER')}")
     print(f"Outputs (when done): {out_dir}/out_*.tgz")
-
 
 if __name__ == "__main__":
     main()

@@ -94,7 +94,7 @@ export ANOMALY_WD=$PWD
 export ANOMALY_GRID_OUT_DIR=$PNFS/out
 export ANOMALY_GIT_URL=https://github.com/wjdanswjddl/anomaly-detection-ana.git
 export ANOMALY_GIT_REF=main
-export JOBSUB_MEMORY=12GB JOBSUB_DISK=20GB JOBSUB_LIFETIME=12h JOBSUB_CPU=4
+export JOBSUB_MEMORY=6GB JOBSUB_DISK=20GB JOBSUB_LIFETIME=12h JOBSUB_CPU=4
 ```
 
 Ensure jobsub auth works on the submit host (same as cafpyana), e.g. valid
