@@ -70,3 +70,68 @@ PYTHONPATH=_stubs:train/diffusion-anomaly:inference \
 # Batch ROC / figures → data area
 python analysis/analyze_outputs.py
 ```
+
+## Grid CPU inference (jobsub)
+
+Inputs are **`.npz` files** (not ROOT). Workers `ifdh cp` NPZs + the model, then run
+`inference/run_ddim2ddim_inference.py`. Details: `inference/GRID.md`.
+
+### One-time setup
+
+```bash
+cd /exp/sbnd/app/users/munjung/anomaly-detection
+
+# 1) Push bin/ + submit script to GitHub (workers git clone this repo)
+# 2) Stage model + dirs on pnfs
+bash bin/stage_pnfs_model.sh
+
+# 3) Build a file list (one pnfs path per line), e.g. 10 NPZs:
+PNFS=/pnfs/sbnd/scratch/users/$USER/anomaly-detection
+# ... copy NPZs into $PNFS/inputs/... then:
+#   find $PNFS/inputs/handscan_test -name '*.npz' | sort > $PNFS/lists/handscan_10.list
+
+export ANOMALY_WD=$PWD
+export ANOMALY_GRID_OUT_DIR=$PNFS/out
+export ANOMALY_GIT_URL=https://github.com/wjdanswjddl/anomaly-detection-ana.git
+export ANOMALY_GIT_REF=main
+export JOBSUB_MEMORY=12GB JOBSUB_DISK=20GB JOBSUB_LIFETIME=12h JOBSUB_CPU=4
+```
+
+Ensure jobsub auth works on the submit host (same as cafpyana), e.g. valid
+SciToken / `htgettoken` for experiment `sbnd`.
+
+### Dry-run (writes scripts + tarball, does not submit)
+
+```bash
+python inference/submit_ddim_grid.py \
+  -l $PNFS/lists/handscan_10.list \
+  --model $PNFS/models/emabrats2update_0.9999_111000.pt \
+  -o handscan_T200_smoke \
+  -ngrid 10 \
+  --T 200 --batch-size 1 \
+  --dry-run
+```
+
+Inspect `MasterJobDir` printed by the script (`run_*.sh`, `grid_executable.sh`, `bin_dir.tar`).
+
+### Submit (e.g. 10 files → 10 jobs, one file each)
+
+```bash
+python inference/submit_ddim_grid.py \
+  -l $PNFS/lists/handscan_10.list \
+  --model $PNFS/models/emabrats2update_0.9999_111000.pt \
+  -o handscan_T200_smoke \
+  -ngrid 10 \
+  --T 200 --batch-size 1
+```
+
+### Monitor
+
+```bash
+jobsub_q -G sbnd --user $USER
+# or
+jobsub_q -G sbnd --jobid=<id>
+```
+
+Outputs land under `$ANOMALY_GRID_OUT_DIR/inference/<stamp>__handscan_T200_smoke/`
+as `out_*.tgz` plus `log_*.log`.

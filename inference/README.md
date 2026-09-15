@@ -5,6 +5,8 @@
 | `01_RunInference.ipynb` | EAF launcher for DDIM / mixed modes |
 | `02_CompareReconstructions.ipynb` | Quick pickle QA |
 | `run_ddim2ddim_inference.py` | Batch DDIM→DDIM |
+| `submit_ddim_grid.py` | jobsub campaign submitter (NPZ inputs) |
+| `GRID.md` | Grid / pnfs how-to |
 | `run_mixed_diffusion_inference.py` | rand2ddim / rand2ddpm / … |
 | `run_handscan_validation_inference.py` | Handscan healthy/unhealthy set |
 | `parallel_handscan_inference.py` | Memory-budgeted parallel runner |
