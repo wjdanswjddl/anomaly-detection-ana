@@ -81,8 +81,8 @@ Inputs are **`.npz` files** (not ROOT). Workers `ifdh cp` NPZs + the model, then
 ```bash
 cd /exp/sbnd/app/users/munjung/anomaly-detection
 
-# 1) Push bin/ + submit script to GitHub (workers git clone this repo)
-# 2) Stage model + dirs on pnfs
+# 1) Stage model + dirs on pnfs (submit ships a repo_bundle.tar — private
+#    GitHub clone is not required on workers)
 bash bin/stage_pnfs_model.sh
 
 # 3) Build a file list (one pnfs path per line), e.g. 10 NPZs:

@@ -200,6 +200,34 @@ def main() -> None:
     shutil.copy2(exe, master / "grid_executable.sh")
     (master / "grid_executable.sh").chmod(0o755)
 
+    # Ship a slim repo snapshot so workers do not need to git-clone a private repo.
+    repo_bundle = master / "repo_bundle.tar"
+    if repo_bundle.exists():
+        repo_bundle.unlink()
+    bundle_members = [
+        "bin",
+        "inference",
+        "_stubs",
+        "configs",
+        "train/diffusion-anomaly/guided_diffusion",
+        "train/diffusion-anomaly/scripts",
+        "train/diffusion-anomaly/requirements.txt",
+        "train/diffusion-anomaly/README.md",
+        "train/diffusion-anomaly/LICENSE",
+    ]
+    # Optional flag scripts if present.
+    for extra in sorted((wd / "train" / "diffusion-anomaly").glob("*.sh")):
+        bundle_members.append(f"train/diffusion-anomaly/{extra.name}")
+    missing = [m for m in bundle_members if not (wd / m).exists()]
+    if missing:
+        sys.exit(f"Cannot build repo_bundle.tar; missing: {missing}")
+    print(f"Building {repo_bundle} ({len(bundle_members)} members)…")
+    subprocess.check_call(
+        ["tar", "cf", str(repo_bundle), *bundle_members],
+        cwd=str(wd),
+    )
+    print(f"  repo_bundle.tar size={repo_bundle.stat().st_size / 1e6:.1f} MB")
+
     # Record campaign metadata for humans.
     (master / "campaign.txt").write_text(
         "\n".join(
@@ -214,6 +242,7 @@ def main() -> None:
                 f"n_inputs={len(inputs)}",
                 f"ngrid={ngrid}",
                 f"file_list={args.file_list}",
+                f"repo_bundle={repo_bundle}",
                 "",
             ]
         )
@@ -225,7 +254,7 @@ def main() -> None:
         tar_path = master / "bin_dir.tar"
         if tar_path.exists():
             tar_path.unlink()
-        members = ["grid_executable.sh", "campaign.txt"] + [
+        members = ["grid_executable.sh", "campaign.txt", "repo_bundle.tar"] + [
             f"run_{i}.sh" for i in range(ngrid)
         ]
         subprocess.check_call(["tar", "cf", "bin_dir.tar", *members])

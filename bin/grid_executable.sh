@@ -26,19 +26,28 @@ spack load ifdhc@2.7.2
 echo "@@ ls -alh (scratch cwd)"
 ls -alh
 
-GIT_URL="${ANOMALY_GIT_URL:-https://github.com/wjdanswjddl/anomaly-detection-ana.git}"
-GIT_REF="${ANOMALY_GIT_REF:-main}"
+filesFromSender="${CONDOR_DIR_INPUT}/bin_dir"
 
-echo "@@ git clone ${GIT_URL}"
-git clone "${GIT_URL}" anomaly-detection-ana
-cd anomaly-detection-ana
-echo "@@ git checkout ${GIT_REF}"
-git checkout "${GIT_REF}"
-git rev-parse --short HEAD
+# Prefer a dropbox-shipped repo bundle (works for private GitHub repos).
+# Fall back to git clone when ANOMALY_USE_GIT_CLONE=1 or the bundle is absent.
+if [ -f "${filesFromSender}/repo_bundle.tar" ] && [ "${ANOMALY_USE_GIT_CLONE:-0}" != "1" ]; then
+  echo "@@ extracting ${filesFromSender}/repo_bundle.tar"
+  mkdir -p anomaly-detection-ana
+  tar xf "${filesFromSender}/repo_bundle.tar" -C anomaly-detection-ana
+  cd anomaly-detection-ana
+else
+  GIT_URL="${ANOMALY_GIT_URL:-https://github.com/wjdanswjddl/anomaly-detection-ana.git}"
+  GIT_REF="${ANOMALY_GIT_REF:-main}"
+  echo "@@ git clone ${GIT_URL}"
+  git clone "${GIT_URL}" anomaly-detection-ana
+  cd anomaly-detection-ana
+  echo "@@ git checkout ${GIT_REF}"
+  git checkout "${GIT_REF}"
+  git rev-parse --short HEAD
+fi
 ls -alh
 
 thisOutputCreationDir="$(pwd)"
-filesFromSender="${CONDOR_DIR_INPUT}/bin_dir"
 
 echo "@@ run init_grid.sh"
 # shellcheck disable=SC1091

@@ -23,15 +23,14 @@ cp -n /exp/sbnd/data/users/gputnam/training-SBND/iterE/results/emabrats2update_0
 
 ## Submit
 
-Requires: `jobsub` token setup (same as cafpyana), and a **cloneable** GitHub repo
-(`ANOMALY_GIT_URL`). If the repo is private, make it public or arrange worker auth.
+Requires: `jobsub` token setup (same as cafpyana). Submit packs a slim
+`repo_bundle.tar` into the dropbox tarball, so workers do **not** need to
+`git clone` a private GitHub repo (set `ANOMALY_USE_GIT_CLONE=1` to force clone).
 
 ```bash
 cd /exp/sbnd/app/users/munjung/anomaly-detection
 export ANOMALY_WD=$PWD
 export ANOMALY_GRID_OUT_DIR=/pnfs/sbnd/scratch/users/$USER/anomaly-detection/out
-export ANOMALY_GIT_URL=https://github.com/wjdanswjddl/anomaly-detection-ana.git
-export ANOMALY_GIT_REF=main
 
 # Optional resource overrides (CPU T=200 is slow — prefer long lifetime)
 export JOBSUB_MEMORY=12GB
@@ -40,10 +39,10 @@ export JOBSUB_LIFETIME=12h
 export JOBSUB_CPU=4
 
 python inference/submit_ddim_grid.py \
-  -l /pnfs/sbnd/scratch/users/$USER/anomaly-detection/lists/handscan_test.list \
+  -l /pnfs/sbnd/scratch/users/$USER/anomaly-detection/lists/handscan_10.list \
   --model /pnfs/sbnd/scratch/users/$USER/anomaly-detection/models/emabrats2update_0.9999_111000.pt \
-  -o handscan_T200_test \
-  -ngrid 2 \
+  -o handscan_T200_smoke \
+  -ngrid 10 \
   --T 200 --batch-size 1 \
   --dry-run   # remove after inspecting MasterJobDir
 ```
@@ -53,5 +52,6 @@ Outputs: `$ANOMALY_GRID_OUT_DIR/inference/<stamp>__<name>/out_*.tgz` (+ `log_*.l
 
 ## Worker flow
 
-`bin/grid_executable.sh` → `git clone` → `bin/init_grid.sh` (venv + CPU torch) →
-`run_${PROCESS}.sh` (`ifdh` NPZs + model → `run_ddim2ddim_inference.py`) → `ifdh` tarball back.
+`bin/grid_executable.sh` → extract `repo_bundle.tar` (or `git clone`) →
+`bin/init_grid.sh` (venv + CPU torch) → `run_${PROCESS}.sh` (`ifdh` NPZs + model →
+`run_ddim2ddim_inference.py`) → `ifdh` tarball back.
