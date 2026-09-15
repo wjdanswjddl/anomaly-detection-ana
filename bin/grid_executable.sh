@@ -26,7 +26,30 @@ spack load ifdhc@2.7.2
 echo "@@ ls -alh (scratch cwd)"
 ls -alh
 
-filesFromSender="${CONDOR_DIR_INPUT}/bin_dir"
+filesFromSender=""
+for cand in \
+  "${CONDOR_DIR_INPUT:-}/bin_dir" \
+  "${INPUT_TAR_DIR_LOCAL:-}" \
+  "$(dirname "${INPUT_TAR_FILE:-/dev/null}")" \
+  "${_CONDOR_JOB_IWD:-}/bin_dir"
+do
+  if [ -n "${cand}" ] && [ -d "${cand}" ] && [ -f "${cand}/run_${nProcess}.sh" ]; then
+    filesFromSender="${cand}"
+    break
+  fi
+done
+if [ -z "${filesFromSender}" ]; then
+  echo "@@ ERROR: cannot find dropbox contents (run_${nProcess}.sh)"
+  echo "@@ CONDOR_DIR_INPUT=${CONDOR_DIR_INPUT:-<unset>}"
+  echo "@@ INPUT_TAR_DIR_LOCAL=${INPUT_TAR_DIR_LOCAL:-<unset>}"
+  echo "@@ INPUT_TAR_FILE=${INPUT_TAR_FILE:-<unset>}"
+  ls -la "${CONDOR_DIR_INPUT:-.}" 2>/dev/null || true
+  ls -la "${INPUT_TAR_DIR_LOCAL:-.}" 2>/dev/null || true
+  exit 2
+fi
+echo "@@ filesFromSender=${filesFromSender}"
+ls -alh "${filesFromSender}"
+
 
 # Prefer a dropbox-shipped repo bundle (works for private GitHub repos).
 # Fall back to git clone when ANOMALY_USE_GIT_CLONE=1 or the bundle is absent.

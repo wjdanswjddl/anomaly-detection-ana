@@ -277,6 +277,7 @@ def main() -> None:
 --resource-provides="usage_model=DEDICATED,OPPORTUNISTIC" \\
 --lines '+FERMIHTC_AutoRelease=True' --lines '+FERMIHTC_GraceMemory=5000' --lines '+FERMIHTC_GraceLifetime=3600' \\
 --append_condor_requirements='(TARGET.HAS_SINGULARITY=?=true)' \\
+--use-pnfs-dropbox \\
 --tar_file_name "dropbox://{master}/bin_dir.tar" \\
 -N {ngrid} \\
 --disk {job_disk} \\

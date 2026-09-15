@@ -98,7 +98,8 @@ export JOBSUB_MEMORY=12GB JOBSUB_DISK=20GB JOBSUB_LIFETIME=12h JOBSUB_CPU=4
 ```
 
 Ensure jobsub auth works on the submit host (same as cafpyana), e.g. valid
-SciToken / `htgettoken` for experiment `sbnd`.
+SciToken / `htgettoken` for experiment `sbnd`. Submit uses `--use-pnfs-dropbox`
+(avoids RCDS quota issues when publishing the dropbox tarball).
 
 ### Dry-run (writes scripts + tarball, does not submit)
 
