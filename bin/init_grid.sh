@@ -27,12 +27,22 @@ python -m pip install --upgrade pip wheel setuptools
 echo "[init_grid] installing numpy tqdm blobfile"
 python -m pip install "numpy>=1.24" "tqdm>=4.66" "blobfile>=2.0"
 
-echo "[init_grid] installing CPU torch"
-python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+echo "[init_grid] installing CPU torch + torchvision"
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+
+echo "[init_grid] installing inference deps (Pillow, scipy, matplotlib)"
+python -m pip install "Pillow>=9.0" "scipy>=1.10" "matplotlib>=3.7"
 
 cd "${REPO_ROOT}"
 export ANOMALY_WD="${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}/_stubs:${REPO_ROOT}/train/diffusion-anomaly:${REPO_ROOT}/inference:${REPO_ROOT}:${PYTHONPATH:-}"
 echo "[init_grid] ANOMALY_WD=${ANOMALY_WD}"
 echo "[init_grid] PYTHONPATH=${PYTHONPATH}"
-python -c "import torch, numpy; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'numpy', numpy.__version__)"
+python -c "
+import torch, numpy
+from PIL import Image
+import scipy, matplotlib, torchvision
+from guided_diffusion.script_util import create_model_and_diffusion
+print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'numpy', numpy.__version__)
+print('guided_diffusion imports OK')
+"

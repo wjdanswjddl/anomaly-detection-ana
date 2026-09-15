@@ -119,14 +119,15 @@ set -e
 echo "@@ worker exit code ${rc}"
 tail -n 120 "${logFile}" || true
 
-if [ -d "${thisOutputCreationDir}/out_${nProcess}" ]; then
+if [ -d "${thisOutputCreationDir}/out_${nProcess}" ] && \
+   find "${thisOutputCreationDir}/out_${nProcess}" -type f | grep -q .; then
   echo "@@ shipping out_${nProcess}/"
   tar czf "out_${nProcess}.tgz" -C "${thisOutputCreationDir}" "out_${nProcess}"
   ifdh cp "${thisOutputCreationDir}/out_${nProcess}.tgz" "${outDir}/out_${nProcess}.tgz"
   echo "@@ Done shipping tarball"
 else
-  echo "@@ ERROR: out_${nProcess} missing (inference likely failed); see log_${nProcess}.log"
-  exit "${rc}"
+  echo "@@ ERROR: out_${nProcess} empty or missing (inference likely failed); see log_${nProcess}.log"
+  exit "${rc:-1}"
 fi
 
 exit "${rc}"
