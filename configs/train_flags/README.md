@@ -30,7 +30,7 @@ Shared architecture / optimizer: `_common.sh`, aligned with
 | `max_steps` | 111000 | stop near iterE’s production ckpt (constant LR) |
 
 ```bash
-export DATA_DIR=/scratch/7DayExclusive/munjung/anomaly-detection/npz
+export DATA_DIR=/scratch/<existing-7Day-pool>/munjung/anomaly-detection/npz
 source configs/train_flags/cosine.sh
 cd train/diffusion-anomaly
 export OPENAI_LOGDIR=/scratch/.../training/diffusion/cosine

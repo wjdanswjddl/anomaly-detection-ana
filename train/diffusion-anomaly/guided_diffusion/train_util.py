@@ -1,6 +1,8 @@
 import copy
 import functools
 import os
+import re
+from pathlib import Path
 
 import blobfile as bf
 import torch as th
@@ -14,6 +16,10 @@ from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
 from tqdm.auto import tqdm
 import numpy as np
+
+# Repo root: .../anomaly-detection (train_util → guided_diffusion → diffusion-anomaly → train → root)
+_APP_ROOT = Path(__file__).resolve().parents[3]
+_STOP_TRAINING_FILE = _APP_ROOT / "STOP_TRAINING"
 
 # Visdom is unused in the train loop; avoid connecting to a remote server
 # (hangs on EAF when sbndbuild03:8850 is unreachable).
@@ -170,18 +176,36 @@ class TrainLoop:
 
     def _load_optimizer_state(self):
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
-        opt_checkpoint = bf.join(
-            bf.dirname(main_checkpoint), f"opt{self.resume_step:06}.pt"
+        # Prefer this fork's naming (optbrats2updateNNNNNN.pt); fall back to
+        # upstream openai/guided-diffusion (optNNNNNN.pt).
+        candidates = [
+            bf.join(
+                bf.dirname(main_checkpoint),
+                f"optbrats2update{self.resume_step:06d}.pt",
+            ),
+            bf.join(bf.dirname(main_checkpoint), f"opt{self.resume_step:06d}.pt"),
+        ]
+        for opt_checkpoint in candidates:
+            if bf.exists(opt_checkpoint):
+                logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
+                state_dict = dist_util.load_state_dict(
+                    opt_checkpoint, map_location=dist_util.dev()
+                )
+                self.opt.load_state_dict(state_dict)
+                return
+        logger.log(
+            f"no optimizer checkpoint found for step {self.resume_step} "
+            f"(tried: {', '.join(candidates)})"
         )
-        if bf.exists(opt_checkpoint):
-            logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
-            state_dict = dist_util.load_state_dict(
-                opt_checkpoint, map_location=dist_util.dev()
-            )
-            self.opt.load_state_dict(state_dict)
 
     def _keep_training(self):
         """Continue while under optional max_steps / lr_anneal_steps budgets."""
+        # Cooperative stop: touch APP_ROOT/STOP_TRAINING from any shared-/exp host.
+        # Already-running processes only see this after they reload this module
+        # (i.e. after a restart) — for live 01a/01b kills, use pkill on EAF.
+        if _STOP_TRAINING_FILE.is_file():
+            logger.log(f"stop file found ({_STOP_TRAINING_FILE}); ending training loop")
+            return False
         cur = self.step + self.resume_step
         if self.max_steps and cur >= self.max_steps:
             return False
@@ -228,16 +252,7 @@ class TrainLoop:
             if self.step % self.plot_interval == 0 and self.step > 0:
                 # make validation plots
                 vbatch, _ = next(self.validationl)
-                for ibatch in range(min(4, vbatch.shape[0])):
-                    outdir = logger.Logger.CURRENT.dir + "/validation-plots/step-%i-ddpm/img-%i/" % (self.step, ibatch)
-                    os.makedirs(outdir, exist_ok=True)
-                    with th.no_grad():
-                        validation_plots.validation_plots(self.diffusion, self.ddp_model, outdir, vbatch[ibatch])
-                for ibatch in range(min(4, vbatch.shape[0])):
-                    outdir = logger.Logger.CURRENT.dir + "/validation-plots/step-%i-ddim/img-%i/" % (self.step, ibatch)
-                    os.makedirs(outdir, exist_ok=True)
-                    with th.no_grad():
-                        validation_plots.validation_plots(self.diffusion, self.ddp_model, outdir, vbatch[ibatch], ddpm=False)
+                self._make_validation_plots(vbatch)
 
             self.step += 1
             pbar.update(1)
@@ -246,6 +261,18 @@ class TrainLoop:
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
             self.save()
+
+    def _make_validation_plots(self, vbatch):
+        for ibatch in range(min(4, vbatch.shape[0])):
+            outdir = logger.Logger.CURRENT.dir + "/validation-plots/step-%i-ddpm/img-%i/" % (self.step, ibatch)
+            os.makedirs(outdir, exist_ok=True)
+            with th.no_grad():
+                validation_plots.validation_plots(self.diffusion, self.ddp_model, outdir, vbatch[ibatch])
+        for ibatch in range(min(4, vbatch.shape[0])):
+            outdir = logger.Logger.CURRENT.dir + "/validation-plots/step-%i-ddim/img-%i/" % (self.step, ibatch)
+            os.makedirs(outdir, exist_ok=True)
+            with th.no_grad():
+                validation_plots.validation_plots(self.diffusion, self.ddp_model, outdir, vbatch[ibatch], ddpm=False)
 
     def run_validation_step(self, batch, cond, batch_weights=None, pixel_weights=None):
         with th.no_grad():
@@ -362,19 +389,29 @@ class TrainLoop:
         dist.barrier()
 
 
+class AETrainLoop(TrainLoop):
+    """
+    TrainLoop for the VAE/CAE anomaly detectors (see autoencoder.py). Only
+    the validation plots differ: autoencoders reconstruct in a single forward
+    pass, so the diffusion q_sample/sample-loop plots are replaced with
+    original/reconstruction/residual panels.
+    """
+
+    def _make_validation_plots(self, vbatch):
+        for ibatch in range(min(4, vbatch.shape[0])):
+            outdir = logger.Logger.CURRENT.dir + "/validation-plots/step-%i-ae/img-%i/" % (self.step, ibatch)
+            os.makedirs(outdir, exist_ok=True)
+            with th.no_grad():
+                validation_plots.ae_validation_plots(self.ddp_model, outdir, vbatch[ibatch])
+
+
 def parse_resume_step_from_filename(filename):
-    """
-    Parse filenames of the form path/to/modelNNNNNN.pt, where NNNNNN is the
-    checkpoint's number of steps.
-    """
-    split = filename.split("model")
-    if len(split) < 2:
-        return 0
-    split1 = split[-1].split(".")[0]
-    try:
-        return int(split1)
-    except ValueError:
-        return 0
+    """Parse step from ``brats2updateNNNNNN.pt`` or upstream ``modelNNNNNN.pt``."""
+    basename = os.path.basename(filename)
+    match = re.search(r"(?:brats2update|model)(\d+)\.pt$", basename)
+    if match:
+        return int(match.group(1))
+    return 0
 
 
 def get_blob_logdir():
@@ -392,10 +429,15 @@ def find_resume_checkpoint():
 def find_ema_checkpoint(main_checkpoint, step, rate):
     if main_checkpoint is None:
         return None
-    filename = f"ema_{rate}_{(step):06d}.pt"
-    path = bf.join(bf.dirname(main_checkpoint), filename)
-    if bf.exists(path):
-        return path
+    # Prefer this fork's naming; fall back to upstream openai/guided-diffusion.
+    candidates = [
+        f"emabrats2update_{rate}_{(step):06d}.pt",
+        f"ema_{rate}_{(step):06d}.pt",
+    ]
+    for filename in candidates:
+        path = bf.join(bf.dirname(main_checkpoint), filename)
+        if bf.exists(path):
+            return path
     return None
 
 

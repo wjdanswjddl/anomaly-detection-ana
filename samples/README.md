@@ -7,6 +7,8 @@
 | `wvfm2h5.py` + `run_wvfm2h5_*.sh` | Offline batch conversion |
 | `02_InspectAndHandscan.ipynb` | Entry for browse / handscan |
 | `HandscanUnhealthy.ipynb` | Interactive unhealthy archive |
+| `CurateHandscanPatches.ipynb` | Plane/crop + keep/discard 512² patches → curated job NPZs |
+| `handscan_patch_curation.py` | Helpers for curation + pnfs staging |
 | `h5_to_npz.ipynb` | h5 → npz |
 | `03_InsertDefects.ipynb` | Entry for synthetic defects |
 | `apply_detector_defects_npz.py` | CLI defect injection |

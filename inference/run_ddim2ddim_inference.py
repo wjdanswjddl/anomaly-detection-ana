@@ -3,16 +3,24 @@
 Run DDIM-forward → DDIM-inverse reconstruction on all *.npz samples under a directory
 (same diffusion recipe as CompareReconstructions-ICARUS.ipynb).
 
-Writes, per source file:
+Writes, per source file and per T:
 
 - Pickle (reco_jobs / ROC layout): integer keys → per-patch dict with ``original``,
-  ``ddim2ddim-T{T}``, and ``saliency-T{T}`` (reconstruction − original).
+  ``diffused-T{T}`` (DDIM-encoded latent at T), ``ddim2ddim-T{T}``, and
+  ``saliency-T{T}`` (reconstruction − original).
+  Arrays NPZ also stores ``diffused`` alongside ``original`` / ``reconstructed`` /
+  ``saliency``.
+
+Pass multiple ``--T`` values to sweep (patches extracted once; each T is written
+separately as ``*_T{T}_ddim2ddim.pkl`` / arrays / meta).
 
 - Same pickle carries ``__ddim2ddim_source__`` → ``input_filename``, ``input_path``, and
   ``input_relative_to_scan_root`` (when the file sits under ``--input-dir``) so you can trace
   results back without relying on output filenames.
 
 - Optional stacked arrays ``*_ddim2ddim_arrays.npz``, and ``*_meta.json`` with matching fields.
+- Optional AD metrics ``*_T{T}_ddim2ddim_ad_metrics.npz`` (weighted MSE, latent L2,
+  denoise loss, posterior typicality, …) — see ``inference/ad_metrics.py``.
 
 ICARUS-style NPZ arrays use ``reco`` shaped like (frames, 1, H, W), (frames, H, W), or (H, W).
 Planes are cropped to multiples of patch size and tiled into model-sized patches.
@@ -288,7 +296,7 @@ def run_file(
     model,
     *,
     scan_root: Path | None,
-    T: int,
+    T: int | list[int],
     batch_size: int,
     reco_key: str,
     patch_h: int,
@@ -298,8 +306,29 @@ def run_file(
     write_npz: bool,
     model_path_display: str,
     progress_ddim: bool,
-) -> dict:
-    """Process one NPZ → outputs with global patch indexing (ROC notebooks)."""
+    ad_metrics: bool = True,
+    ad_posterior_k: int = 0,
+    ad_t_loss: int | None = None,
+    ad_t_embed: int = 0,
+) -> list[dict]:
+    """Process one NPZ → per-T outputs with global patch indexing (ROC notebooks).
+
+    ``T`` may be a single int or a list (sweep). Patches are extracted once; each
+    T writes its own ``*_T{T}_ddim2ddim.pkl`` / arrays / meta (same layout as before).
+    """
+    from ad_metrics import compute_ad_metrics_batch, save_ad_metrics_npz
+
+    if isinstance(T, int):
+        timesteps = [int(T)]
+    else:
+        timesteps = [int(t) for t in T]
+    if not timesteps:
+        raise ValueError("Need at least one T")
+    # Preserve order, drop duplicates
+    seen: set[int] = set()
+    timesteps = [t for t in timesteps if not (t in seen or seen.add(t))]
+    if any(t <= 0 for t in timesteps):
+        raise ValueError(f"T values must be positive, got {timesteps}")
 
     pts, layouts, frame_slices, frame_stems = gather_patches_from_npz(
         npz_path,
@@ -316,52 +345,11 @@ def run_file(
     n_patches = int(pts.shape[0])
     print(
         f"{npz_path.name}: {n_frames} frame(s) in NPZ reco → "
-        f"{n_patches} patch image(s) ({patch_h}×{patch_w}) through the model"
+        f"{n_patches} patch image(s) ({patch_h}×{patch_w}) through the model; "
+        f"T sweep={timesteps}"
     )
 
     pts = visualize_np(np.expand_dims(pts, axis=1)).astype(np.float32)
-
-    save_data: dict = {}
-    all_orig_np: list[np.ndarray] = []
-    all_reco_np: list[np.ndarray] = []
-    all_saliency_np: list[np.ndarray] = []
-
-    ddim_key = f"ddim2ddim-T{T}"
-    saliency_key = f"saliency-T{T}"
-
-    dev = dist_util.dev()
-    n_total = pts.shape[0]
-    n_batches = (n_total + batch_size - 1) // batch_size
-
-    for bstart in tqdm(
-        range(0, n_total, batch_size),
-        desc=f"{npz_path.name} [bs={batch_size}]",
-        total=n_batches,
-        unit="batch",
-        leave=False,
-    ):
-        bend = min(bstart + batch_size, n_total)
-        batch = pts[bstart:bend]
-        imgs = th.tensor(batch, device=dev)
-
-        _, reco = ddim2ddim_reconstruct(diffusion, model, imgs, T, progress=progress_ddim)
-
-        for i in range(len(imgs)):
-            gidx = bstart + i
-            origin = imgs[i].detach().cpu().numpy()
-            r = reco[i].detach().cpu().numpy()
-            save_data[gidx] = {
-                "original": origin,
-                ddim_key: r,
-                saliency_key: r - origin,
-            }
-            all_orig_np.append(origin)
-            all_reco_np.append(r)
-            all_saliency_np.append(r - origin)
-
-    stacked_orig = np.stack(all_orig_np, axis=0) if all_orig_np else np.zeros((0, 1, patch_h, patch_w))
-    stacked_reco = np.stack(all_reco_np, axis=0) if all_reco_np else np.zeros_like(stacked_orig)
-    stacked_sal = np.stack(all_saliency_np, axis=0) if all_saliency_np else np.zeros_like(stacked_orig)
 
     rel_to_scan = None
     if scan_root is not None:
@@ -376,59 +364,195 @@ def run_file(
         "input_relative_to_scan_root": rel_to_scan,
     }
 
-    meta = {
-        **trace,
-        "T": T,
-        "model_path": model_path_display,
-        "source_npz": str(npz_path.resolve()),
-        "reco_key": reco_key,
-        "n_patches": int(n_total),
-        "patch_h": patch_h,
-        "patch_w": patch_w,
-        "frame_slices": [{"stem": stem, "start": a, "end": b} for stem, (a, b) in zip(frame_stems, frame_slices)],
-        "layouts_per_frame": layouts,
-        "pickle_keys_per_patch": ["original", ddim_key, saliency_key],
-        "formats": [],
-    }
-
     stem = npz_path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if write_pickle:
-        pkl_path = out_dir / f"{stem}_T{T}_ddim2ddim.pkl"
-        meta["formats"].append("pickle")
-        trace_copy = dict(trace)
-        save_data["__ddim2ddim_source__"] = trace_copy
-        with open(pkl_path, "wb") as f:
-            pickle.dump(save_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    dev = dist_util.dev()
+    n_total = pts.shape[0]
+    n_batches = (n_total + batch_size - 1) // batch_size
+    metas: list[dict] = []
 
-    if write_npz:
-        nz_path = out_dir / f"{stem}_T{T}_ddim2ddim_arrays.npz"
-        meta["formats"].append("npz_arrays")
-        np.savez_compressed(
-            nz_path,
-            original=stacked_orig.astype(np.float32, copy=False),
-            reconstructed=stacked_reco.astype(np.float32, copy=False),
-            saliency=stacked_sal.astype(np.float32, copy=False),
-            input_filename=np.asarray(trace["input_filename"]),
-            input_path=np.asarray(trace["input_path"]),
-            input_relative_to_scan_root=np.asarray(trace["input_relative_to_scan_root"] or ""),
+    for T_i in timesteps:
+        save_data: dict = {}
+        all_orig_np: list[np.ndarray] = []
+        all_diffused_np: list[np.ndarray] = []
+        all_reco_np: list[np.ndarray] = []
+        all_saliency_np: list[np.ndarray] = []
+
+        ddim_key = f"ddim2ddim-T{T_i}"
+        saliency_key = f"saliency-T{T_i}"
+
+        for bstart in tqdm(
+            range(0, n_total, batch_size),
+            desc=f"{npz_path.name} T={T_i} [bs={batch_size}]",
+            total=n_batches,
+            unit="batch",
+            leave=False,
+        ):
+            bend = min(bstart + batch_size, n_total)
+            batch = pts[bstart:bend]
+            imgs = th.tensor(batch, device=dev)
+
+            ddim_noised, reco = ddim2ddim_reconstruct(
+                diffusion, model, imgs, T_i, progress=progress_ddim
+            )
+
+            for i in range(len(imgs)):
+                gidx = bstart + i
+                origin = imgs[i].detach().cpu().numpy()
+                noisy = ddim_noised[i].detach().cpu().numpy()
+                r = reco[i].detach().cpu().numpy()
+                save_data[gidx] = {
+                    "original": origin,
+                    f"diffused-T{T_i}": noisy,
+                    ddim_key: r,
+                    saliency_key: r - origin,
+                }
+                all_orig_np.append(origin)
+                all_diffused_np.append(noisy)
+                all_reco_np.append(r)
+                all_saliency_np.append(r - origin)
+
+        stacked_orig = (
+            np.stack(all_orig_np, axis=0)
+            if all_orig_np
+            else np.zeros((0, 1, patch_h, patch_w))
+        )
+        stacked_diffused = (
+            np.stack(all_diffused_np, axis=0)
+            if all_diffused_np
+            else np.zeros_like(stacked_orig)
+        )
+        stacked_reco = (
+            np.stack(all_reco_np, axis=0) if all_reco_np else np.zeros_like(stacked_orig)
+        )
+        stacked_sal = (
+            np.stack(all_saliency_np, axis=0)
+            if all_saliency_np
+            else np.zeros_like(stacked_orig)
         )
 
-    json_path = out_dir / f"{stem}_T{T}_meta.json"
-    with open(json_path, "w") as wf:
-        json.dump(_json_ready(meta), wf, indent=2)
+        meta = {
+            **trace,
+            "T": T_i,
+            "T_sweep": list(timesteps),
+            "model_path": model_path_display,
+            "source_npz": str(npz_path.resolve()),
+            "reco_key": reco_key,
+            "n_patches": int(n_total),
+            "patch_h": patch_h,
+            "patch_w": patch_w,
+            "frame_slices": [
+                {"stem": stem_f, "start": a, "end": b}
+                for stem_f, (a, b) in zip(frame_stems, frame_slices)
+            ],
+            "layouts_per_frame": layouts,
+            "pickle_keys_per_patch": [
+                "original",
+                f"diffused-T{T_i}",
+                ddim_key,
+                saliency_key,
+            ],
+            "formats": [],
+            "ad_metrics": bool(ad_metrics),
+            "ad_posterior_k": int(ad_posterior_k),
+        }
 
-    return meta
+        if write_pickle:
+            pkl_path = out_dir / f"{stem}_T{T_i}_ddim2ddim.pkl"
+            meta["formats"].append("pickle")
+            save_data["__ddim2ddim_source__"] = dict(trace)
+            with open(pkl_path, "wb") as f:
+                pickle.dump(save_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        if write_npz:
+            nz_path = out_dir / f"{stem}_T{T_i}_ddim2ddim_arrays.npz"
+            meta["formats"].append("npz_arrays")
+            np.savez_compressed(
+                nz_path,
+                original=stacked_orig.astype(np.float32, copy=False),
+                diffused=stacked_diffused.astype(np.float32, copy=False),
+                reconstructed=stacked_reco.astype(np.float32, copy=False),
+                saliency=stacked_sal.astype(np.float32, copy=False),
+                input_filename=np.asarray(trace["input_filename"]),
+                input_path=np.asarray(trace["input_path"]),
+                input_relative_to_scan_root=np.asarray(
+                    trace["input_relative_to_scan_root"] or ""
+                ),
+            )
+
+        if ad_metrics and n_total > 0:
+            metrics = compute_ad_metrics_batch(
+                stacked_orig,
+                stacked_reco,
+                model=model,
+                diffusion=diffusion,
+                T=T_i,
+                t_loss=ad_t_loss if ad_t_loss is not None else T_i,
+                t_embed=ad_t_embed,
+                posterior_k=int(ad_posterior_k),
+                progress_posterior=False,
+            )
+            mpath = out_dir / f"{stem}_T{T_i}_ddim2ddim_ad_metrics.npz"
+            save_ad_metrics_npz(mpath, metrics, trace=trace)
+            meta["formats"].append("ad_metrics")
+            meta["ad_metrics_path"] = mpath.name
+            # compact summary for manifest
+            summary = {}
+            for name in metrics.get("metric_names", []):
+                arr = metrics.get(name)
+                if arr is None:
+                    continue
+                a = np.asarray(arr, dtype=np.float64)
+                a = a[np.isfinite(a)]
+                if a.size:
+                    summary[name] = {
+                        "mean": float(a.mean()),
+                        "max": float(a.max()),
+                        "min": float(a.min()),
+                    }
+            meta["ad_metrics_summary"] = summary
+
+        json_path = out_dir / f"{stem}_T{T_i}_meta.json"
+        with open(json_path, "w") as wf:
+            json.dump(_json_ready(meta), wf, indent=2)
+
+        metas.append(meta)
+
+    return metas
 
 
-STRING_HYP_KEYS = frozenset({"noise_schedule", "attention_resolutions", "channel_mult"})
+STRING_HYP_KEYS = frozenset(
+    {
+        "noise_schedule",
+        "attention_resolutions",
+        "channel_mult",
+        "noise_mode",
+    }
+)
+BOOL_HYP_KEYS = frozenset(
+    {
+        "anisotropic_noise",
+        "predict_xstart",
+        "learn_sigma",
+        "class_cond",
+        "rescale_learned_sigmas",
+        "rescale_timesteps",
+        "use_scale_shift_norm",
+    }
+)
 
 
-def _parse_hyp_overrides(items: list[str]) -> dict[str, float | str | int]:
+def _parse_hyp_overrides(items: list[str]) -> dict:
     """``key=value`` pairs for model/diffusion options."""
-    out: dict[str, float | str | int] = {}
-    int_keys = {"image_size", "num_channels", "diffusion_steps", "num_res_blocks", "num_heads"}
+    out: dict = {}
+    int_keys = {
+        "image_size",
+        "num_channels",
+        "diffusion_steps",
+        "num_res_blocks",
+        "num_heads",
+    }
     for kv in items or []:
         if "=" not in kv:
             raise ValueError(f"Expected key=value override, got {kv!r}")
@@ -438,14 +562,17 @@ def _parse_hyp_overrides(items: list[str]) -> dict[str, float | str | int]:
         if key in STRING_HYP_KEYS:
             out[key] = vs
             continue
-        if "." in vs or "e" in vs.lower():
+        if key in BOOL_HYP_KEYS:
+            out[key] = vs.lower() in ("1", "true", "yes", "y", "on")
+            continue
+        if "." in vs or ("e" in vs.lower() and not vs.lower().startswith("0x")):
             val = float(vs)
             out[key] = int(val) if key in int_keys else val
         else:
             try:
                 out[key] = int(vs)
             except ValueError:
-                out[key] = float(vs)
+                out[key] = vs
     return out
 
 
@@ -457,9 +584,15 @@ def main() -> None:
     parser.add_argument(
         "--T",
         type=int,
+        nargs="+",
         required=True,
-        dest="timestep_T",
-        help="Noise level timestep (matches notebook ``T`` in ddim loops)",
+        dest="timestep_Ts",
+        metavar="T",
+        help=(
+            "Noise-level timestep(s) for DDIM encode/decode. Pass one or more for a "
+            "sweep, e.g. ``--T 50 100 200 400``. Each T writes separate "
+            "``*_T{T}_ddim2ddim.pkl`` / arrays / meta (patches extracted once)."
+        ),
     )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--reco-key", type=str, default="reco")
@@ -494,8 +627,14 @@ def main() -> None:
         "--hyp-override",
         action="append",
         default=[],
-        metavar="NAME=NUMBER",
-        help="Optional overrides, e.g. diffusion_steps=1000 noise_schedule=cosine image_size=512",
+        metavar="NAME=VALUE",
+        help="Optional overrides, e.g. diffusion_steps=1000 noise_schedule=cosine anisotropic_noise=true",
+    )
+    parser.add_argument(
+        "--train-config",
+        default=None,
+        choices=["linear", "cosine", "ramp", "anisotropic", "pred_xstart"],
+        help="Apply schedule/architecture overrides from configs.train_configs (e.g. anisotropic).",
     )
     parser.add_argument(
         "--max-files",
@@ -503,6 +642,43 @@ def main() -> None:
         default=None,
         metavar="N",
         help="Process at most N *.npz files (useful for quick tests)",
+    )
+    parser.add_argument(
+        "--ad-metrics",
+        dest="ad_metrics",
+        action="store_true",
+        default=True,
+        help="Write ``*_ad_metrics.npz`` (default: on).",
+    )
+    parser.add_argument(
+        "--no-ad-metrics",
+        dest="ad_metrics",
+        action="store_false",
+        help="Skip AD metrics NPZ.",
+    )
+    parser.add_argument(
+        "--ad-posterior-k",
+        type=int,
+        default=0,
+        metavar="K",
+        help=(
+            "If K>0, also compute posterior typicality with K stochastic "
+            "q-sample→DDIM counterfactuals (adds ~K full denoise passes). Default 0."
+        ),
+    )
+    parser.add_argument(
+        "--ad-t-loss",
+        type=int,
+        default=None,
+        metavar="T",
+        help="Timestep for denoise_loss score (default: same as reconstruction T).",
+    )
+    parser.add_argument(
+        "--ad-t-embed",
+        type=int,
+        default=0,
+        metavar="T",
+        help="UNet timestep used for bottleneck embeddings (default: 0).",
     )
 
     parsed = parser.parse_args()
@@ -523,7 +699,21 @@ def main() -> None:
     if parsed.max_files is not None:
         npz_paths = npz_paths[: parsed.max_files]
 
-    hypextra = _parse_hyp_overrides(parsed.hyp_override)
+    hypextra: dict = {}
+    if parsed.train_config:
+        # Ensure repo root import works when launched from grid PYTHONPATH.
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        hypextra.update(overrides_for_train_config(parsed.train_config))
+        if parsed.train_config == "anisotropic":
+            hypextra.update(
+                {
+                    "noise_mode": "signal_proportional",
+                    "empty_noise_fraction": 0.05,
+                    "smoothing_sigma": 2.0,
+                }
+            )
+    hypextra.update(_parse_hyp_overrides(parsed.hyp_override))
 
     fmts = [x.strip().lower() for x in parsed.formats.split(",")]
     write_pickle = "pickle" in fmts
@@ -540,7 +730,11 @@ def main() -> None:
     model.to(dist_util.dev())
     model.eval()
 
+    timesteps = list(parsed.timestep_Ts)
+    print(f"T sweep: {timesteps}")
+
     manifest_items: list[dict] = []
+    by_T: dict[int, list[dict]] = {t: [] for t in timesteps}
 
     for nz in npz_paths:
         if parsed.recursive:
@@ -549,13 +743,13 @@ def main() -> None:
         else:
             leaf_out = output_dir
 
-        meta_run = run_file(
+        metas_run = run_file(
             nz,
             leaf_out,
             diffusion,
             model,
             scan_root=input_dir,
-            T=parsed.timestep_T,
+            T=timesteps,
             batch_size=parsed.batch_size,
             reco_key=parsed.reco_key,
             patch_h=patch_h,
@@ -565,16 +759,39 @@ def main() -> None:
             write_npz=write_npz,
             model_path_display=str(model_path),
             progress_ddim=parsed.ddim_progress,
+            ad_metrics=bool(parsed.ad_metrics),
+            ad_posterior_k=int(parsed.ad_posterior_k),
+            ad_t_loss=parsed.ad_t_loss,
+            ad_t_embed=int(parsed.ad_t_embed),
         )
-        manifest_items.append(meta_run)
+        for meta_run in metas_run:
+            manifest_items.append(meta_run)
+            by_T[int(meta_run["T"])].append(meta_run)
 
-    sweep_json = output_dir / f"manifest_T{parsed.timestep_T}.json"
-    with open(sweep_json, "w") as wf:
+    for T_i, runs in by_T.items():
+        sweep_json = output_dir / f"manifest_T{T_i}.json"
+        with open(sweep_json, "w") as wf:
+            json.dump(
+                _json_ready({"T": T_i, "T_sweep": timesteps, "model_path": str(model_path), "runs": runs}),
+                wf,
+                indent=2,
+            )
+
+    combined = output_dir / "manifest.json"
+    with open(combined, "w") as wf:
         json.dump(
-            _json_ready({"T": parsed.timestep_T, "model_path": str(model_path), "runs": manifest_items}),
+            _json_ready(
+                {
+                    "T_sweep": timesteps,
+                    "model_path": str(model_path),
+                    "n_files": len(npz_paths),
+                    "runs": manifest_items,
+                }
+            ),
             wf,
             indent=2,
         )
+    print(f"Wrote {combined} and manifest_T*.json for T={timesteps}")
 
 
 if __name__ == "__main__":

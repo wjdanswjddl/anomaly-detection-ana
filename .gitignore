@@ -18,3 +18,4 @@ train/diffusion-anomaly/results/
 # Local / scratch outputs
 training/benchmarks/
 *.log
+STOP_TRAINING

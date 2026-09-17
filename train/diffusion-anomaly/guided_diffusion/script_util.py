@@ -5,6 +5,7 @@ from . import gaussian_diffusion as gd
 from .respace import SpacedDiffusion, space_timesteps
 from .anisotropic_diffusion import SpacedAnisotropicDiffusion
 from .unet import SuperResModel, UNetModel, EncoderUNetModel
+from .autoencoder import VAEModel, CAEModel
 
 NUM_CLASSES = 2
 
@@ -487,6 +488,58 @@ def create_gaussian_diffusion(
             local_std_patch_size=local_std_patch_size,
         )
     return SpacedDiffusion(**common_kwargs)
+
+
+def autoencoder_defaults():
+    """
+    Defaults for VAE/CAE anomaly-detector training (see autoencoder.py and
+    TRAINING_AUTOENCODERS.md). Flags prefixed ae_ to avoid clashing with
+    diffusion flags.
+    """
+    return dict(
+        ae_type="vae",  # "vae" | "cae"
+        image_size=512,
+        in_channels=1,
+        ae_hidden_dims="32,64,128,256,512,512,512",
+        ae_latent_dim=512,
+        kld_weight=1e-4,      # VAE only
+        spatial_latent=True,  # CAE only
+        ssim_weight=0.0,      # CAE only
+        final_activation="tanh",
+    )
+
+
+def create_autoencoder(
+    ae_type,
+    image_size,
+    in_channels,
+    ae_hidden_dims,
+    ae_latent_dim,
+    kld_weight,
+    spatial_latent,
+    ssim_weight,
+    final_activation,
+):
+    if ae_type == "vae":
+        return VAEModel(
+            image_size=image_size,
+            in_channels=in_channels,
+            latent_dim=ae_latent_dim,
+            hidden_dims=ae_hidden_dims,
+            kld_weight=kld_weight,
+            final_activation=final_activation,
+        )
+    if ae_type == "cae":
+        return CAEModel(
+            image_size=image_size,
+            in_channels=in_channels,
+            latent_dim=ae_latent_dim,
+            hidden_dims=ae_hidden_dims,
+            spatial_latent=spatial_latent,
+            ssim_weight=ssim_weight,
+            final_activation=final_activation,
+        )
+    raise ValueError(f"Unknown ae_type: {ae_type} (expected 'vae' or 'cae')")
 
 
 def add_dict_to_argparser(parser, default_dict):

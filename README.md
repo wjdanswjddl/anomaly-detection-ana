@@ -37,14 +37,34 @@ Compatibility symlinks at the repo root keep old import paths working
 1. **`train/00_ExploreRemoteEAF.ipynb`** — map remote code, scratch, checkpoints; import EAF flag scripts  
 2. **Two GPU slices:** `train/01a_TrainDiffusion_sliceA.ipynb` (`linear`→`ramp`→`pred_xstart`) and `train/01b_TrainDiffusion_sliceB.ipynb` (`anisotropic`→`cosine`); or single-GPU `train/01_TrainDiffusion.ipynb` for all five sequentially  
 3. `train/02_TrainClassifier.ipynb`  
-4. `train/03_LearningCurves.ipynb`
+4. `train/03_LearningCurves.ipynb` — **SBND** diffusion curves / stop-signal  
+5. `train/03c_InspectICARUS_AE.ipynb` — **ICARUS** VAE/CAE curves / status  
+6. **Baselines (VAE/CAE):** `train/04a_TrainVAE_ICARUS.ipynb` + `train/04b_TrainCAE_ICARUS.ipynb` (one GPU slice each)
 
 ### 3. Inference + metrics (EAF kernel for scratch I/O)
 
 1. `inference/01_RunInference.ipynb`  
 2. `inference/02_CompareReconstructions.ipynb`  
 3. `analysis/01_MetricsAndROC.ipynb` or `python analysis/analyze_outputs.py`  
-4. `analysis/CompareROCCurves.ipynb` — overlay saved ROC JSON
+4. `analysis/CompareROCCurves.ipynb` — overlay saved ROC JSON  
+5. **Baselines:** `inference/06_BaselineVAE_CAE_SBND.ipynb`, `inference/07_BaselineVAE_CAE_ICARUS.ipynb`
+
+### Baselines (VAE / CAE)
+
+Code vendored from [gputnam/diffusion-anomaly `nu-anomaly`](https://github.com/gputnam/diffusion-anomaly/tree/nu-anomaly)
+into `train/diffusion-anomaly/` (`guided_diffusion/autoencoder.py`, demos, `TRAINING_AUTOENCODERS.md`).
+
+| Experiment | Checkpoints | Notebooks |
+|------------|-------------|-----------|
+| SBND | Durable drop: `DATA_ROOT/training/{vae,cae}/sbnd/` (copy Gray `ema_0.9999_*.pt` off 7Day scratch) | `inference/06_BaselineVAE_CAE_SBND.ipynb` |
+| ICARUS | Train then compare | `train/04_…`, `inference/07_…` |
+
+```bash
+PYTHONPATH=_stubs:train/diffusion-anomaly:inference \
+  python inference/run_autoencoder_inference.py --help
+```
+
+**Do not launch GPU training/inference without explicit approval.**
 
 ## Naming
 
@@ -65,7 +85,7 @@ python samples/apply_detector_defects_npz.py --input-dir /path/to/healthy_npz
 # DDIM→DDIM inference (from repo root)
 PYTHONPATH=_stubs:train/diffusion-anomaly:inference \
   python inference/run_ddim2ddim_inference.py \
-    --input-dir ... --output-dir ... --model-path ... --T 200
+    --input-dir ... --output-dir ... --model-path ... --T 50 100 200 400
 
 # Batch ROC / figures → data area
 python analysis/analyze_outputs.py
@@ -110,9 +130,9 @@ quota (`Disk quota exceeded`), free space there before submitting.
 python inference/submit_ddim_grid.py \
   -l $PNFS/lists/handscan_10.list \
   --model $PNFS/models/emabrats2update_0.9999_111000.pt \
-  -o handscan_T200_smoke \
+  -o handscan_Tsweep_smoke \
   -ngrid 10 \
-  --T 200 --batch-size 1 \
+  --T 50 100 200 400 --batch-size 1 \
   --dry-run
 ```
 
@@ -124,9 +144,9 @@ Inspect `MasterJobDir` printed by the script (`run_*.sh`, `grid_executable.sh`, 
 python inference/submit_ddim_grid.py \
   -l $PNFS/lists/handscan_10.list \
   --model $PNFS/models/emabrats2update_0.9999_111000.pt \
-  -o handscan_T200_smoke \
+  -o handscan_Tsweep_smoke \
   -ngrid 10 \
-  --T 200 --batch-size 1
+  --T 50 100 200 400 --batch-size 1
 ```
 
 ### Monitor
@@ -139,3 +159,5 @@ jobsub_q -G sbnd --jobid=<id>
 
 Outputs land under `$ANOMALY_GRID_OUT_DIR/inference/<stamp>__handscan_T200_smoke/`
 as `out_*.tgz` plus `log_*.log`.
+
+Inspect with `inference/03_InspectGridOutputs.ipynb` (set `CAMPAIGN` to that directory).

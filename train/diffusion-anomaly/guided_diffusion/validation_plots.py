@@ -3,6 +3,54 @@ import numpy as np
 import matplotlib.pyplot as plt
 from . import dist_util
 
+
+def ae_validation_plots(model, basedir, img0):
+    """
+    Validation plots for the VAE/CAE anomaly detectors: original image,
+    reconstruction, signed residual (the anomaly map), and waveform overlays
+    mirroring the diffusion validation-plot style.
+    """
+    module = model.module if hasattr(model, "module") else model
+    i0 = img0.cpu().numpy()
+    img0 = img0.to(dist_util.dev())
+
+    # BatchNorm cannot run in training mode on a single image.
+    was_training = module.training
+    module.eval()
+    try:
+        reco = module.reconstruct(img0.unsqueeze(0))
+    finally:
+        if was_training:
+            module.train()
+    r0 = np.squeeze(reco.cpu().numpy())
+
+    plt.imshow(np.squeeze(i0), vmin=-1, vmax=1)
+    plt.colorbar()
+    plt.title("Original Image")
+    plt.savefig(basedir + "img.png", bbox_inches="tight")
+    plt.close()
+
+    plt.imshow(r0, vmin=-1, vmax=1)
+    plt.colorbar()
+    plt.title("Reconstruction")
+    plt.savefig(basedir + "reco.png", bbox_inches="tight")
+    plt.close()
+
+    plt.imshow(r0 - np.squeeze(i0), cmap="bwr", vmin=-0.1, vmax=0.1)
+    plt.colorbar()
+    plt.title("Reconstruction - Original")
+    plt.savefig(basedir + "residual.png", bbox_inches="tight")
+    plt.close()
+
+    for tind in range(0, i0.shape[-1], 100):
+        plt.plot(r0[:, tind], label="Reconstruction")
+        plt.plot(np.squeeze(i0)[:, tind], label="Original", linewidth=3, color="black", linestyle="--")
+        plt.legend()
+        plt.title("Reconstructed Waveform, I: %i" % tind)
+        plt.savefig(basedir + "reco_wavf_I%i.png" % tind, bbox_inches="tight")
+        plt.close()
+
+
 def validation_plots(diffusion, model, basedir, img0, ddpm=True):
     genf = diffusion.p_sample_loop_progressive if ddpm else diffusion.ddim_sample_loop_progressive
     i0 = img0.cpu().numpy()

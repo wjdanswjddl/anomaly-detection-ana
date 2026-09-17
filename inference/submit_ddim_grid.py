@@ -19,9 +19,9 @@ Example (after staging model + file list on pnfs)::
   python inference/submit_ddim_grid.py \\
     -l /pnfs/sbnd/scratch/users/munjung/anomaly-detection/lists/handscan_test.list \\
     --model /pnfs/sbnd/scratch/users/munjung/anomaly-detection/models/emabrats2update_0.9999_111000.pt \\
-    -o handscan_T200_test \\
+    -o handscan_Tsweep_test \\
     -ngrid 2 \\
-    --T 200 --batch-size 1
+    --T 50 100 200 400 --batch-size 1
 
 Dry-run (write scripts/tarball, do not jobsub)::
 
@@ -59,18 +59,23 @@ def _chunk(items: list[str], ngrid: int) -> list[list[str]]:
     return buckets
 
 
+_MIXED_MODES = ("rand2ddim", "rand2ddpm", "ddpm2ddpm", "ddim2ddpm")
+
+
 def _write_worker_script(
     path: Path,
     *,
     job_idx: int,
     files: list[str],
     model_pnfs: str,
-    T: int,
+    timesteps: list[int],
     batch_size: int,
     formats: str,
     extra_args: str,
+    modes: list[str],
 ) -> None:
     """Bash executed (not sourced) on the worker after the repo + venv are ready."""
+    t_args = " ".join(str(int(t)) for t in timesteps)
     lines = [
         "#!/bin/bash",
         "set -euo pipefail",
@@ -106,22 +111,50 @@ def _write_worker_script(
         "export OMP_NUM_THREADS=\"${OMP_NUM_THREADS:-4}\"",
         "export OPENBLAS_NUM_THREADS=\"${OPENBLAS_NUM_THREADS:-4}\"",
         "",
-        "python inference/run_ddim2ddim_inference.py \\",
-        "  --input-dir ./inputs \\",
-        f"  --output-dir ./out_{job_idx} \\",
-        "  --model-path ./model.pt \\",
-        f"  --T {int(T)} \\",
-        f"  --batch-size {int(batch_size)} \\",
-        f"  --formats {shlex.quote(formats)}",
     ]
-    if extra_args.strip():
-        # Attach extra args on a continuation line.
-        lines[-1] += " \\"
-        lines.append(f"  {extra_args.strip()}")
+    if "ddim2ddim" in modes:
+        lines += [
+            f"echo '[run_{job_idx}.sh] ddim2ddim T sweep: {t_args}'",
+            "python inference/run_ddim2ddim_inference.py \\",
+            "  --input-dir ./inputs \\",
+            f"  --output-dir ./out_{job_idx} \\",
+            "  --model-path ./model.pt \\",
+            f"  --T {t_args} \\",
+            f"  --batch-size {int(batch_size)} \\",
+            f"  --formats {shlex.quote(formats)}",
+        ]
+        if extra_args.strip():
+            lines[-1] += " \\"
+            lines.append(f"  {extra_args.strip()}")
+
+    mixed = [m for m in modes if m in _MIXED_MODES]
+    if mixed:
+        mixed_tag = " ".join(mixed)
+        lines += [
+            "",
+            f"echo '[run_{job_idx}.sh] mixed modes: {mixed_tag}'",
+        ]
+        for mode in mixed:
+            for t_val in timesteps:
+                lines += [
+                    f"echo '[run_{job_idx}.sh] {mode} T={t_val}'",
+                    "python inference/run_mixed_diffusion_inference.py \\",
+                    "  --input-dir ./inputs \\",
+                    f"  --output-dir ./out_{job_idx} \\",
+                    "  --model-path ./model.pt \\",
+                    f"  --mode {shlex.quote(mode)} \\",
+                    f"  --T {int(t_val)} \\",
+                    f"  --batch-size {int(batch_size)} \\",
+                    f"  --formats {shlex.quote(formats)}",
+                ]
+                if extra_args.strip():
+                    lines[-1] += " \\"
+                    lines.append(f"  {extra_args.strip()}")
+
     lines += [
         "",
         f"echo '[run_{job_idx}.sh] outputs:'",
-        f"find out_{job_idx} -type f | head -50",
+        f"find out_{job_idx} -type f | head -80",
         f"echo '[run_{job_idx}.sh] done'",
     ]
     path.write_text("\n".join(lines) + "\n")
@@ -134,13 +167,45 @@ def main() -> None:
     p.add_argument("--model", type=Path, required=True, help="Model checkpoint on pnfs (ifdh-readable)")
     p.add_argument("-o", "--output", required=True, help="Campaign / output name prefix")
     p.add_argument("-ngrid", dest="ngrid", type=int, required=True, help="Number of grid jobs (>0)")
-    p.add_argument("--T", type=int, default=200)
+    p.add_argument(
+        "--T",
+        type=int,
+        nargs="+",
+        default=[50, 100, 200, 400],
+        metavar="T",
+        help="DDIM timestep(s) to sweep (default: 50 100 200 400). Each T is written separately.",
+    )
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--formats", default="pickle,npz")
     p.add_argument(
         "--extra-args",
         default="",
-        help="Extra CLI args appended to run_ddim2ddim_inference.py (quoted string)",
+        help="Extra CLI args appended to inference runners (quoted string)",
+    )
+    p.add_argument(
+        "--ad-posterior-k",
+        type=int,
+        default=0,
+        metavar="K",
+        help=(
+            "Forwarded as ``--ad-posterior-k K`` (stochastic typicality; 0=skip). "
+            "AD metrics NPZ is on by default in the runners."
+        ),
+    )
+    p.add_argument(
+        "--no-ad-metrics",
+        action="store_true",
+        help="Forward ``--no-ad-metrics`` to inference runners.",
+    )
+    p.add_argument(
+        "--modes",
+        nargs="+",
+        default=["ddim2ddim"],
+        choices=["ddim2ddim", *_MIXED_MODES],
+        help=(
+            "Reconstruction modes to run. ddim2ddim uses one T-sweep call; "
+            "mixed modes run once per T."
+        ),
     )
     p.add_argument("--dry-run", action="store_true", help="Build tarball/scripts but do not jobsub_submit")
     p.add_argument("-N", "--max-files", type=int, default=0, help="Optional cap on input list length")
@@ -190,9 +255,18 @@ def main() -> None:
     print(f"ANOMALY_GRID_OUT_DIR={grid_out}")
     print(f"ANOMALY_GIT_URL={git_url}")
     print(f"ANOMALY_GIT_REF={git_ref}")
-    print(f"inputs={len(inputs)} ngrid={ngrid}")
+    print(f"inputs={len(inputs)} ngrid={ngrid} T_sweep={list(args.T)} modes={list(args.modes)}")
     print(f"MasterJobDir={master}")
     print(f"OutputDir={out_dir}")
+
+    extra_bits: list[str] = []
+    if args.extra_args.strip():
+        extra_bits.append(args.extra_args.strip())
+    if args.no_ad_metrics:
+        extra_bits.append("--no-ad-metrics")
+    if int(args.ad_posterior_k) > 0:
+        extra_bits.append(f"--ad-posterior-k {int(args.ad_posterior_k)}")
+    extra_merged = " ".join(extra_bits)
 
     for i, flist in enumerate(buckets):
         _write_worker_script(
@@ -200,10 +274,11 @@ def main() -> None:
             job_idx=i,
             files=flist,
             model_pnfs=model,
-            T=args.T,
+            timesteps=list(args.T),
             batch_size=args.batch_size,
             formats=args.formats,
-            extra_args=args.extra_args,
+            extra_args=extra_merged,
+            modes=list(args.modes),
         )
         print(f"  job {i}: {len(flist)} file(s)")
 
@@ -273,7 +348,8 @@ def main() -> None:
                 f"stamp={stamp}",
                 f"output={args.output}",
                 f"model={model}",
-                f"T={args.T}",
+                f"T_sweep={' '.join(str(t) for t in args.T)}",
+                f"modes={' '.join(args.modes)}",
                 f"batch_size={args.batch_size}",
                 f"git_url={git_url}",
                 f"git_ref={git_ref}",

@@ -36,7 +36,9 @@ class SeqWriter(object):
 class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
-            self.file = open(filename_or_file, "wt")
+            # Append across resumes so prior human-readable dumps are kept.
+            mode = "at" if osp.exists(filename_or_file) else "wt"
+            self.file = open(filename_or_file, mode)
             self.own_file = True
         else:
             assert hasattr(filename_or_file, "read"), (
@@ -97,7 +99,9 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
 class JSONOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, "wt")
+        # JSONL: append so resumes keep prior progress.json rows.
+        mode = "at" if osp.exists(filename) and osp.getsize(filename) > 0 else "wt"
+        self.file = open(filename, mode)
 
     def writekvs(self, kvs):
         for k, v in sorted(kvs.items()):
@@ -112,9 +116,25 @@ class JSONOutputFormat(KVWriter):
 
 class CSVOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, "w+t")
-        self.keys = []
+        """Open progress.csv without wiping prior rows.
+
+        Upstream used ``w+t``, which truncated the file on every
+        ``logger.configure()`` (i.e. every training resume) and erased the
+        learning curve. We reopen existing files in ``r+t``, keep the header
+        keys, and append new rows.
+        """
         self.sep = ","
+        self.keys = []
+        if osp.isfile(filename) and osp.getsize(filename) > 0:
+            with open(filename, "rt") as f:
+                header = f.readline().rstrip("\n\r")
+                if header:
+                    self.keys = header.split(self.sep)
+            # r+ so new columns can rewrite the file; seek to EOF for appends.
+            self.file = open(filename, "r+t")
+            self.file.seek(0, os.SEEK_END)
+        else:
+            self.file = open(filename, "w+t")
 
     def writekvs(self, kvs):
         # Add our current row to the history
@@ -125,13 +145,14 @@ class CSVOutputFormat(KVWriter):
             self.file.seek(0)
             lines = self.file.readlines()
             self.file.seek(0)
+            self.file.truncate()
             for (i, k) in enumerate(self.keys):
                 if i > 0:
                     self.file.write(",")
                 self.file.write(k)
             self.file.write("\n")
             for line in lines[1:]:
-                self.file.write(line[:-1])
+                self.file.write(line.rstrip("\n\r"))
                 self.file.write(self.sep * len(extra_keys))
                 self.file.write("\n")
         for (i, k) in enumerate(self.keys):

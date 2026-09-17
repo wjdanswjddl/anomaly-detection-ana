@@ -24,8 +24,32 @@ plus wall-time fixes: `validation_interval=500`, `plot_interval=10000`, `use_fp1
 2. **Two GPU slices:** open `01a_TrainDiffusion_sliceA.ipynb` (`linear`→`ramp`→`pred_xstart`) and `01b_TrainDiffusion_sliceB.ipynb` (`anisotropic`→`cosine`) on separate kernels; set `DRY_RUN = False` in each.
    Single GPU: `01_TrainDiffusion.ipynb` with `SEQUENTIAL=True`
 3. `02_TrainClassifier.ipynb` — classifier (optional / separate)
-4. `03_LearningCurves.ipynb` — point `RUN_DIR` at `.../training/diffusion/<config>/`
+4. `03_LearningCurves.ipynb` — point `RUN_DIR` at `.../training/diffusion/<config>/` (**SBND**)  
+5. `03c_InspectICARUS_AE.ipynb` — VAE/CAE under `.../training/{vae,cae}/icarus/`
 
 Prefer the **EMA** checkpoint near step 111000 for inference (same convention as Gray’s iterE).
 
-Logs default to `/scratch/7DayExclusive/munjung/anomaly-detection/training/diffusion/<config>/`.
+Logs default to `/scratch/<existing-7Day-pool>/munjung/anomaly-detection/training/diffusion/<config>/`.
+
+## VAE / CAE baselines
+
+| Notebook | Purpose |
+|----------|---------|
+| `04a_TrainVAE_ICARUS.ipynb` | Train VAE on DNN-ROI (GPU slice A) |
+| `04b_TrainCAE_ICARUS.ipynb` | Train CAE on DNN-ROI (GPU slice B) |
+| `stop_running_trainers.sh` | Kill leftover `image_train` / AE trainers on EAF |
+| Flags | `configs/train_flags/{vae,cae}_{sbnd,icarus}.sh` |
+| Library | `train/diffusion-anomaly/guided_diffusion/autoencoder.py` |
+| Docs | `train/diffusion-anomaly/TRAINING_AUTOENCODERS.md` |
+
+SBND AE weights: copy Gray’s EMA into
+`/exp/sbnd/data/users/munjung/anomaly-detection/training/{vae,cae}/sbnd/`
+(scratch `training-SBND-{VAE,CAE}/iterA` is often purged).
+
+Before starting AE training, free the GPUs:
+
+```bash
+# on EAF jupyter-munjung
+bash train/stop_running_trainers.sh
+rm -f STOP_TRAINING
+```

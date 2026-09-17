@@ -32,23 +32,33 @@ cd /exp/sbnd/app/users/munjung/anomaly-detection
 export ANOMALY_WD=$PWD
 export ANOMALY_GRID_OUT_DIR=/pnfs/sbnd/scratch/users/$USER/anomaly-detection/out
 
-# Optional resource overrides (CPU T=200 is slow — prefer long lifetime)
-export JOBSUB_MEMORY=12GB
+# Optional resource overrides (multi-T sweeps are ~linear in sum(T) — prefer long lifetime)
+export JOBSUB_MEMORY=6GB
 export JOBSUB_DISK=20GB
-export JOBSUB_LIFETIME=12h
+export JOBSUB_LIFETIME=24h
 export JOBSUB_CPU=4
 
 python inference/submit_ddim_grid.py \
   -l /pnfs/sbnd/scratch/users/$USER/anomaly-detection/lists/handscan_10.list \
   --model /pnfs/sbnd/scratch/users/$USER/anomaly-detection/models/emabrats2update_0.9999_111000.pt \
-  -o handscan_T200_smoke \
+  -o handscan_Tsweep_smoke \
   -ngrid 10 \
-  --T 200 --batch-size 1 \
+  --T 50 100 200 400 --batch-size 1 \
   --dry-run   # remove after inspecting MasterJobDir
 ```
 
+Each job writes separate products per T (`*_T50_…`, `*_T100_…`, `*_T200_…`) plus
+`manifest_T{T}.json` and a combined `manifest.json`.
+
+By default runners also write **`*_ad_metrics.npz`** (weighted MSE, noise-region MSE,
+latent L2, denoise loss; optional `--ad-posterior-k K` for typicality). Inspect with
+`inference/03_InspectGridOutputs.ipynb` (AD metrics section) or
+`inference/05_AssessHandscanGrid.ipynb`.
+
 Monitor: `jobsub_q -G sbnd --user $USER`  
 Outputs: `$ANOMALY_GRID_OUT_DIR/inference/<stamp>__<name>/out_*.tgz` (+ `log_*.log`).
+
+Inspect: open `inference/03_InspectGridOutputs.ipynb` and set `CAMPAIGN` to that output directory.
 
 ## Worker flow
 

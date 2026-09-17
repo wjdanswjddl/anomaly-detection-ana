@@ -54,6 +54,7 @@ from run_ddim2ddim_inference import (  # noqa: E402
     _parse_hyp_overrides,
     build_model_and_diffusion,
     gather_patches_from_npz,
+    overrides_for_train_config,
     visualize_np,
 )
 
@@ -176,8 +177,13 @@ def run_file(
     progress_ddim: bool,
     progress_ddpm: bool,
     meta_filename_include_mode: bool,
+    ad_metrics: bool = True,
+    ad_posterior_k: int = 0,
+    ad_t_loss: int | None = None,
+    ad_t_embed: int = 0,
 ) -> dict:
     """Process one NPZ → outputs with global patch indexing (same contract as DDIM2DDIM script)."""
+    from ad_metrics import compute_ad_metrics_batch, save_ad_metrics_npz
 
     pts, layouts, frame_slices, frame_stems = gather_patches_from_npz(
         npz_path,
@@ -278,6 +284,8 @@ def run_file(
         "layouts_per_frame": layouts,
         "pickle_keys_per_patch": ["original", reco_key_out, saliency_key],
         "formats": [],
+        "ad_metrics": bool(ad_metrics),
+        "ad_posterior_k": int(ad_posterior_k),
     }
 
     stem = npz_path.stem
@@ -303,6 +311,37 @@ def run_file(
             input_relative_to_scan_root=np.asarray(trace["input_relative_to_scan_root"] or ""),
             mode=np.asarray(mode),
         )
+
+    if ad_metrics and n_total > 0:
+        metrics = compute_ad_metrics_batch(
+            stacked_orig,
+            stacked_reco,
+            model=model,
+            diffusion=diffusion,
+            T=int(T),
+            t_loss=ad_t_loss if ad_t_loss is not None else int(T),
+            t_embed=ad_t_embed,
+            posterior_k=int(ad_posterior_k),
+            progress_posterior=False,
+        )
+        mpath = out_dir / f"{stem}_T{T}_{mode}_ad_metrics.npz"
+        save_ad_metrics_npz(mpath, metrics, trace=trace)
+        meta["formats"].append("ad_metrics")
+        meta["ad_metrics_path"] = mpath.name
+        summary = {}
+        for name in metrics.get("metric_names", []):
+            arr = metrics.get(name)
+            if arr is None:
+                continue
+            a = np.asarray(arr, dtype=np.float64)
+            a = a[np.isfinite(a)]
+            if a.size:
+                summary[name] = {
+                    "mean": float(a.mean()),
+                    "max": float(a.max()),
+                    "min": float(a.min()),
+                }
+        meta["ad_metrics_summary"] = summary
 
     if meta_filename_include_mode:
         json_path = out_dir / f"{stem}_T{T}_{mode}_meta.json"
@@ -400,6 +439,46 @@ def main() -> None:
         metavar="N",
         help="Process at most N *.npz files (useful for quick tests)",
     )
+    parser.add_argument(
+        "--train-config",
+        default=None,
+        choices=["linear", "cosine", "ramp", "anisotropic", "pred_xstart"],
+        help="Apply schedule/architecture overrides from configs.train_configs.",
+    )
+    parser.add_argument(
+        "--ad-metrics",
+        dest="ad_metrics",
+        action="store_true",
+        default=True,
+        help="Write ``*_ad_metrics.npz`` (default: on).",
+    )
+    parser.add_argument(
+        "--no-ad-metrics",
+        dest="ad_metrics",
+        action="store_false",
+        help="Skip AD metrics NPZ.",
+    )
+    parser.add_argument(
+        "--ad-posterior-k",
+        type=int,
+        default=0,
+        metavar="K",
+        help="If K>0, compute posterior typicality with K stochastic counterfactuals.",
+    )
+    parser.add_argument(
+        "--ad-t-loss",
+        type=int,
+        default=None,
+        metavar="T",
+        help="Timestep for denoise_loss (default: reconstruction T).",
+    )
+    parser.add_argument(
+        "--ad-t-embed",
+        type=int,
+        default=0,
+        metavar="T",
+        help="UNet timestep for bottleneck embeddings (default: 0).",
+    )
 
     parsed = parser.parse_args()
     input_dir = parsed.input_dir.expanduser().resolve()
@@ -429,7 +508,20 @@ def main() -> None:
         print(f"Output root (mixed, distinct from ddim2ddim): {run_root}")
 
     th.set_grad_enabled(False)
-    hypextra = _parse_hyp_overrides(parsed.hyp_override)
+    hypextra: dict = {}
+    if parsed.train_config:
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        hypextra.update(overrides_for_train_config(parsed.train_config))
+        if parsed.train_config == "anisotropic":
+            hypextra.update(
+                {
+                    "noise_mode": "signal_proportional",
+                    "empty_noise_fraction": 0.05,
+                    "smoothing_sigma": 2.0,
+                }
+            )
+    hypextra.update(_parse_hyp_overrides(parsed.hyp_override))
     model, diffusion = build_model_and_diffusion(hypextra)
     sd = dist_util.load_state_dict(str(model_path), map_location="cpu")
     model.load_state_dict(sd)
@@ -464,6 +556,10 @@ def main() -> None:
             progress_ddim=parsed.ddim_progress,
             progress_ddpm=parsed.ddpm_progress,
             meta_filename_include_mode=parsed.flat_output,
+            ad_metrics=bool(parsed.ad_metrics),
+            ad_posterior_k=int(parsed.ad_posterior_k),
+            ad_t_loss=parsed.ad_t_loss,
+            ad_t_embed=int(parsed.ad_t_embed),
         )
         manifest_items.append(meta_run)
 

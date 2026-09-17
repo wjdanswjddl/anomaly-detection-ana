@@ -16,7 +16,23 @@
 #   export BATCH_SIZE=16
 #   source configs/train_flags/linear.sh
 
-: "${DATA_DIR:=/scratch/7DayExclusive/munjung/anomaly-detection/npz}"
+# Probe existing /scratch/7Day* pools; do not assume a pool name.
+if [ -z "${DATA_DIR:-}" ]; then
+  DATA_DIR=""
+  for pool in /scratch/7Day*; do
+    [ -d "$pool" ] || continue
+    cand="$pool/munjung/anomaly-detection/npz"
+    if [ -d "$cand" ]; then
+      DATA_DIR="$cand"
+      break
+    fi
+  done
+fi
+if [ -z "${DATA_DIR}" ]; then
+  echo "ERROR: DATA_DIR not set and no /scratch/7Day*/munjung/anomaly-detection/npz found." >&2
+  echo "Existing pools: $(ls -d /scratch/7Day* 2>/dev/null || echo '<none>')" >&2
+  exit 1
+fi
 : "${VAL_DIR:=${DATA_DIR}}"
 # iterE flags.txt omitted charge_scale → argparse default 1.0.
 : "${CHARGE_SCALE:=1}"
